@@ -1,4 +1,5 @@
-"""Hermes Gate 主 TUI 应用 — 基于 Textual"""
+"""Hermes Gate Main TUI Application — Built with Textual"""
+
 import asyncio
 import os
 import re
@@ -8,8 +9,15 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, Center
 from textual.widgets import (
-    Header, Footer, Label, Button, ListItem, ListView,
-    Input, RichLog, Static,
+    Header,
+    Footer,
+    Label,
+    Button,
+    ListItem,
+    ListView,
+    Input,
+    RichLog,
+    Static,
 )
 from textual.reactive import reactive
 from textual import work
@@ -17,10 +25,11 @@ from textual.screen import ModalScreen
 
 from hermes_gate.session import SessionManager
 from hermes_gate.network import NetworkMonitor, NetStatus
-from hermes_gate.servers import load_servers, add_server, display_name
+from hermes_gate.servers import load_servers, add_server, display_name, resolve_to_ip
 
 
-# ─── 新增服务器弹窗 ───────────────────────────────────────────────
+# ─── Add Server Dialog ────────────────────────────────────────────
+
 
 class NewServerScreen(ModalScreen[str | None]):
     CSS = """
@@ -35,16 +44,16 @@ class NewServerScreen(ModalScreen[str | None]):
     #btn-row { layout: horizontal; height: auto; }
     #btn-row Button { margin-right: 1; }
     """
-    BINDINGS = [Binding("escape", "cancel", "取消")]
+    BINDINGS = [Binding("escape", "cancel", "Cancel")]
 
     def compose(self) -> ComposeResult:
         with Container(id="dialog"):
-            yield Label("🔗 新增服务器", id="dialog-title")
-            yield Input(placeholder="例如: root@1.2.3.4 或 admin@myserver", id="input")
-            yield Label("Enter 确认 · Esc 取消", id="hint")
+            yield Label("🔗 Add Server", id="dialog-title")
+            yield Input(placeholder="e.g.: root@1.2.3.4 or admin@myserver", id="input")
+            yield Label("Enter to confirm · Esc to cancel", id="hint")
             with Horizontal(id="btn-row"):
-                yield Button("连接", variant="success", id="btn-ok")
-                yield Button("取消", variant="default", id="btn-cancel")
+                yield Button("Connect", variant="success", id="btn-ok")
+                yield Button("Cancel", variant="default", id="btn-cancel")
 
     def on_mount(self) -> None:
         self.query_one("#input", Input).focus()
@@ -65,7 +74,8 @@ class NewServerScreen(ModalScreen[str | None]):
         self.dismiss(None)
 
 
-# ─── 连接中弹窗 ────────────────────────────────────────────────────
+# ─── Connecting Dialog ────────────────────────────────────────────
+
 
 class ConnectingScreen(ModalScreen):
     CSS = """
@@ -75,6 +85,7 @@ class ConnectingScreen(ModalScreen):
         border: thick $primary; background: $surface; padding: 1 2;
     }
     """
+
     def __init__(self, message: str):
         super().__init__()
         self._msg = message
@@ -90,13 +101,15 @@ class ConnectingScreen(ModalScreen):
             pass
 
 
-# ─── 状态灯 ────────────────────────────────────────────────────────
+# ─── Status Dot ──────────────────────────────────────────────────
+
 
 class StatusDot(Label):
     status: reactive[str] = reactive("red")
 
     def watch_status(self, new_status: str) -> None:
         from rich.text import Text
+
         colors = {"green": "#00FF00", "yellow": "#FFFF00", "red": "#FF0000"}
         labels = {"green": "Connected", "yellow": "Unstable", "red": "OFFLINE"}
         c = colors.get(new_status, "#FF0000")
@@ -111,11 +124,13 @@ class StatusDot(Label):
 
 
 class InputDot(Label):
-    """输入框前的小状态灯"""
+    """Small status dot before the input field"""
+
     net: reactive[str] = reactive("red")
 
     def watch_net(self, val: str) -> None:
         from rich.text import Text
+
         color = "#00FF00" if val == "green" else "#FF0000"
         t = Text("● ", style=f"bold {color}")
         self.update(t)
@@ -124,7 +139,8 @@ class InputDot(Label):
         self.net = "red"
 
 
-# ─── 主应用 ─────────────────────────────────────────────────────────
+# ─── Main Application ────────────────────────────────────────────
+
 
 class HermesGateApp(App):
     CSS = """
@@ -165,40 +181,50 @@ class HermesGateApp(App):
         height: 1fr;
         border: solid $primary;
         padding: 0 1;
-        overflow: auto auto;
+        overflow-y: auto;
         background: $surface;
     }
     #input-bar {
-        dock: bottom; height: 3;
+        height: 3;
         padding: 0 1; layout: horizontal;
         background: $surface;
         border-top: solid $primary;
     }
     #input-dot { width: auto; padding: 1 1 0 0; }
     #hermes-input { width: 1fr; }
+    #viewer-hint {
+        color: $text-muted; text-align: center;
+        padding: 0 1; height: 1;
+    }
     """
 
-    BINDINGS = [Binding("q", "quit", "退出")]
+    BINDINGS = [
+        Binding("ctrl+q", "noop", show=False),
+        Binding("q", "quit", "Quit"),
+    ]
     TITLE = "⚡ Hermes Gate"
 
     # 每个 phase 的 bindings（含统一的 Shift+Tab 返回）
     _BIND_SELECT = [
-        Binding("d", "delete_server", "删除"),
-        Binding("q", "quit", "退出"),
+        Binding("ctrl+q", "noop", show=False),
+        Binding("d", "delete_server", "Delete"),
+        Binding("q", "quit", "Quit"),
     ]
     _BIND_SESSION = [
-        Binding("n", "new_session", "新建"),
-        Binding("k", "kill_session", "杀死"),
-        Binding("r", "refresh", "刷新"),
-        Binding("enter", "attach_session", "连接"),
-        Binding("escape", "back", "返回"),
-        Binding("shift+tab", "back", "返回"),
-        Binding("q", "quit", "退出"),
+        Binding("ctrl+q", "noop", show=False),
+        Binding("n", "new_session", "New"),
+        Binding("k", "kill_session", "Kill"),
+        Binding("r", "refresh", "Refresh"),
+        Binding("enter", "attach_session", "Attach"),
+        Binding("escape", "back", "Back"),
+        Binding("shift+tab", "back", "Back"),
+        Binding("q", "quit", "Quit"),
     ]
     _BIND_VIEWER = [
-        Binding("escape", "back", "返回"),
-        Binding("shift+tab", "back", "返回"),
-        Binding("q", "quit", "退出"),
+        Binding("ctrl+q", "noop", show=False),
+        Binding("escape", "back", "Back", show=False),
+        Binding("shift+tab", "back", "Back", show=False),
+        Binding("ctrl+b", "back", "Back"),
     ]
 
     def __init__(self):
@@ -218,7 +244,7 @@ class HermesGateApp(App):
         self._show_server_select()
 
     # ═══════════════════════════════════════════════════════════════
-    # 第一步：服务器选择
+    # Step 1: Server Selection
     # ═══════════════════════════════════════════════════════════════
 
     def _clear(self) -> None:
@@ -235,16 +261,22 @@ class HermesGateApp(App):
 
         servers = load_servers()
         items = [ListItem(Label(f" 🖥️  {display_name(s)}"), name="srv") for s in servers]
-        items.append(ListItem(Label(" ➕  新增服务器..."), name="new-srv"))
+        items.append(ListItem(Label(" ➕  Add Server..."), name="new-srv"))
 
-        self.mount(Center(
-            Vertical(
-                Label("⚡ Hermes Gate — 选择服务器", id="server-title"),
-                ListView(*items, id="server-list"),
-                Label("↑↓ 选择 · Enter 连接 · D 删除 · Q 退出", id="server-hint"),
-                id="server-box",
-            ), id="server-screen",
-        ))
+        self.mount(
+            Center(
+                Vertical(
+                    Label("⚡ Hermes Gate — Select Server", id="server-title"),
+                    ListView(*items, id="server-list"),
+                    Label(
+                        "↑↓ Select · Enter Connect · D Delete · Q Quit",
+                        id="server-hint",
+                    ),
+                    id="server-box",
+                ),
+                id="server-screen",
+            )
+        )
         self.query_one("#server-list", ListView).focus()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -263,8 +295,11 @@ class HermesGateApp(App):
         else:
             self._connect_server(servers[idx])
 
+    def action_noop(self) -> None:
+        pass
+
     def action_delete_server(self) -> None:
-        """D 键删除选中的服务器（仅删除 servers.json 中的记录）"""
+        """D key to delete selected server (only removes from servers.json)"""
         if self._phase != "select":
             return
         lv = self.query_one("#server-list", ListView)
@@ -273,14 +308,14 @@ class HermesGateApp(App):
             return
         servers = load_servers()
         if idx >= len(servers):
-            # 选中的是"新增服务器"，不删除
             return
         server = servers[idx]
         name = display_name(server)
 
         from hermes_gate.servers import remove_server
+
         remove_server(server["user"], server["host"])
-        self._hint("server-hint", f"已删除 {name}")
+        self._hint("server-hint", f"Deleted {name}")
         # 刷新列表
         self._clear()
         self._show_server_select()
@@ -291,35 +326,40 @@ class HermesGateApp(App):
                 return
             text = result.strip()
             if "@" not in text:
-                self._hint("server-hint", "格式错误，请输入 user@host")
+                self._hint("server-hint", "Invalid format. Please enter user@host")
                 return
             user, host = text.split("@", 1)
             user, host = user.strip(), host.strip()
             if not user or not host:
-                self._hint("server-hint", "用户名和主机不能为空")
+                self._hint("server-hint", "Username and host cannot be empty")
                 return
             self._connect_server({"user": user, "host": host}, new=True)
+
         self.push_screen(NewServerScreen(), handle)
 
-    # ─── 连接服务器 ────────────────────────────────────────────────
+    # ─── Connect Server ────────────────────────────────────────────
 
     def _connect_server(self, server: dict, new: bool = False) -> None:
         user, host = server["user"], server["host"]
         name = display_name(server)
-        scr = ConnectingScreen(f"🔍 正在连接 {name} ...")
+        scr = ConnectingScreen(f"🔍 Connecting to {name} ...")
         self.push_screen(scr)
 
         async def _do():
-            scr.update_msg(f"🔍 测试 SSH 连接 {name} ...")
+            scr.update_msg(f"🔍 Testing SSH connection to {name} ...")
             if not await self._ssh_ok(user, host):
                 self.pop_screen()
-                self._hint("server-hint",
-                    f"无法连接 {name}，请检查地址和密钥" if new else f"无法连接 {name}")
+                self._hint(
+                    "server-hint",
+                    f"Cannot connect to {name}, check address and keys"
+                    if new
+                    else f"Cannot connect to {name}",
+                )
                 return
-            scr.update_msg(f"🔍 检查 {name} 上的 hermes ...")
+            scr.update_msg(f"🔍 Checking hermes on {name} ...")
             if not await self._hermes_ok(user, host):
                 self.pop_screen()
-                self._hint("server-hint", "请在服务器上安装 hermes")
+                self._hint("server-hint", "Please install hermes on the server")
                 return
             if new:
                 add_server(user, host)
@@ -329,27 +369,49 @@ class HermesGateApp(App):
 
         self.run_worker(_do(), exclusive=True)
 
-    @work(exit_on_error=False)
     async def _ssh_ok(self, user: str, host: str) -> bool:
+        ip = resolve_to_ip(host)
         try:
             p = await asyncio.create_subprocess_exec(
-                "ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
-                "-o", "ConnectTimeout=8", f"{user}@{host}", "echo", "ok",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "ConnectTimeout=8",
+                f"{user}@{ip}",
+                "echo",
+                "ok",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
             out, _ = await asyncio.wait_for(p.communicate(), timeout=15)
             return p.returncode == 0 and b"ok" in out
         except Exception:
             return False
 
-    @work(exit_on_error=False)
     async def _hermes_ok(self, user: str, host: str) -> bool:
+        ip = resolve_to_ip(host)
         try:
             p = await asyncio.create_subprocess_exec(
-                "ssh", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=no",
-                "-o", "ConnectTimeout=8", f"{user}@{host}", "hermes", "-v",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-o",
+                "ConnectTimeout=8",
+                f"{user}@{ip}",
+                "bash -l -c 'hermes --version'",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
             out, _ = await asyncio.wait_for(p.communicate(), timeout=15)
-            return p.returncode == 0 and len((out or b"").decode(errors="replace").strip()) > 0
+            return (
+                p.returncode == 0
+                and len((out or b"").decode(errors="replace").strip()) > 0
+            )
         except Exception:
             return False
 
@@ -358,12 +420,14 @@ class HermesGateApp(App):
             h = self.query_one(f"#{hint_id}", Label)
             h.update(f"❌ {msg}")
             h.styles.color = "red"
-            self.set_timer(3, lambda: h.update("↑↓ 选择 · Enter 确认 · Esc 返回 · Q 退出"))
+            self.set_timer(
+                3, lambda: h.update("↑↓ Select · Enter Confirm · Esc Back · Q Quit")
+            )
         except Exception:
             pass
 
     # ═══════════════════════════════════════════════════════════════
-    # 第三步：Session 列表
+    # Step 2: Session List
     # ═══════════════════════════════════════════════════════════════
 
     def _show_session_list(self, user: str, host: str) -> None:
@@ -377,15 +441,20 @@ class HermesGateApp(App):
         self.BINDINGS = self._BIND_SESSION
 
         server_name = display_name({"user": user, "host": host})
-        self.mount(Center(
-            Vertical(
-                Label(f"⚡ {server_name} — Session 列表", id="session-title"),
-                ListView(id="session-list"),
-                Label("↑↓ 选择 · Enter 连接 · N 新建 · K 杀死 · Shift+Tab 返回",
-                      id="session-hint"),
-                id="session-box",
-            ), id="session-screen",
-        ))
+        self.mount(
+            Center(
+                Vertical(
+                    Label(f"⚡ {server_name} — Sessions", id="session-title"),
+                    ListView(id="session-list"),
+                    Label(
+                        "↑↓ Select · Enter Attach · N New · K Kill · Shift+Tab Back",
+                        id="session-hint",
+                    ),
+                    id="session-box",
+                ),
+                id="session-screen",
+            )
+        )
         self._refresh_sessions()
         self.query_one("#session-list", ListView).focus()
 
@@ -398,7 +467,7 @@ class HermesGateApp(App):
         else:
             s = self.sessions[idx]
             if not s.get("alive"):
-                self._hint("session-hint", f"{s['name']} 已失效，请刷新")
+                self._hint("session-hint", f"{s['name']} is dead, please refresh")
                 return
             self._enter_viewer(s["id"])
 
@@ -408,18 +477,24 @@ class HermesGateApp(App):
             return
         try:
             loop = asyncio.get_event_loop()
-            self.sessions = await loop.run_in_executor(None, self.session_mgr.list_sessions)
+            self.sessions = await loop.run_in_executor(
+                None, self.session_mgr.list_sessions
+            )
             lv = self.query_one("#session-list", ListView)
             await lv.clear()
             for s in self.sessions:
                 alive = "🟢" if s.get("alive") else "⚪"
                 created = s.get("created", "")
                 if "T" in created:
-                    created = created.split("T")[0][5:] + " " + created.split("T")[1][:5]
-                await lv.append(ListItem(
-                    Label(f" {alive} gate-{s['id']}   ({created})"), name="sess"))
-            await lv.append(ListItem(
-                Label(" ➕  新建 session..."), name="new-sess"))
+                    created = (
+                        created.split("T")[0][5:] + " " + created.split("T")[1][:5]
+                    )
+                await lv.append(
+                    ListItem(
+                        Label(f" {alive} gate-{s['id']}   ({created})"), name="sess"
+                    )
+                )
+            await lv.append(ListItem(Label(" ➕  New Session..."), name="new-sess"))
             lv.focus()
         except Exception:
             pass
@@ -428,7 +503,7 @@ class HermesGateApp(App):
         if self._phase == "session":
             self._refresh_sessions()
 
-    # ─── 新建 Session ─────────────────────────────────────────────
+    # ─── New Session ────────────────────────────────────────────────
 
     def action_new_session(self) -> None:
         if self._phase != "session":
@@ -444,16 +519,16 @@ class HermesGateApp(App):
             entry = await loop.run_in_executor(None, self.session_mgr.create_session)
             self._enter_viewer(entry["id"])
         except Exception as e:
-            self._hint("session-hint", f"创建失败: {e}")
+            self._hint("session-hint", f"Failed to create: {e}")
 
-    # ─── 杀死 Session ─────────────────────────────────────────────
+    # ─── Kill Session ────────────────────────────────────────────────
 
     def action_kill_session(self) -> None:
         if self._phase != "session":
             return
         idx = self.query_one("#session-list", ListView).index
         if idx is None or idx >= len(self.sessions):
-            self._hint("session-hint", "请先选择一个 session")
+            self._hint("session-hint", "Please select a session first")
             return
         self._kill(self.sessions[idx]["id"])
 
@@ -464,16 +539,20 @@ class HermesGateApp(App):
         name = f"gate-{sid}"
         loop = asyncio.get_event_loop()
         ok = await loop.run_in_executor(None, self.session_mgr.kill_session, sid)
-        self._hint("session-hint",
-            f"已杀死 {name}" if ok else f"{name} 远端已不存在，已移除记录")
+        self._hint(
+            "session-hint",
+            f"Killed {name}"
+            if ok
+            else f"{name} no longer exists on remote, record removed",
+        )
         self._refresh_sessions()
 
     # ═══════════════════════════════════════════════════════════════
-    # 第五步：Hermes Viewer（实时输出 + 输入框 + 网络灯）
+    # Step 3: Hermes Viewer (live output + input + network dot)
     # ═══════════════════════════════════════════════════════════════
 
     def _enter_viewer(self, session_id: int) -> None:
-        """进入 hermes viewer 界面"""
+        """Enter hermes viewer interface"""
         self._phase = "viewer"
         self._current_session_id = session_id
         self._clear()
@@ -494,9 +573,13 @@ class HermesGateApp(App):
                 Static("", id="hermes-output"),
                 Horizontal(
                     InputDot(id="input-dot"),
-                    Input(placeholder="输入 prompt 发送给远端 hermes ...", id="hermes-input"),
+                    Input(
+                        placeholder="Enter prompt to send to remote hermes ...",
+                        id="hermes-input",
+                    ),
                     id="input-bar",
                 ),
+                Label("Ctrl+B Back · Enter Send", id="viewer-hint"),
                 id="viewer-area",
             ),
         )
@@ -505,11 +588,11 @@ class HermesGateApp(App):
         self._start_network_monitor()
         self._start_output_poll(session_id)
 
-    # ─── 轮询远端 tmux 输出 ───────────────────────────────────────
+    # ─── Poll Remote tmux Output ───────────────────────────────────
 
     @work(exit_on_error=False)
     async def _start_output_poll(self, session_id: int) -> None:
-        """每 1.5 秒通过 SSH 抓取远端 tmux pane 内容"""
+        """Poll remote tmux pane content every 1.5s via SSH"""
         name = f"gate-{session_id}"
         mgr = self.session_mgr
         if not mgr:
@@ -519,27 +602,37 @@ class HermesGateApp(App):
         while self._phase == "viewer":
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    "ssh", "-o", "BatchMode=yes",
-                    "-o", "StrictHostKeyChecking=no",
-                    "-o", "ConnectTimeout=5",
-                    "-p", mgr.port,
-                    f"{mgr.user}@{mgr.host}",
-                    "tmux", "capture-pane", "-t", name, "-p", "-S", "-80",
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "StrictHostKeyChecking=no",
+                    "-o",
+                    "ConnectTimeout=5",
+                    "-p",
+                    mgr.port,
+                    f"{mgr.user}@{mgr._ip}",
+                    "tmux",
+                    "capture-pane",
+                    "-t",
+                    name,
+                    "-p",
+                    "-S",
+                    "-80",
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
                 stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
                 raw = stdout.decode(errors="replace")
 
-                # 去掉 ANSI 转义序列
                 clean = _strip_ansi(raw)
 
-                # 只在内容变化时更新
                 if clean != prev_content:
                     prev_content = clean
                     try:
                         widget = self.query_one("#hermes-output", Static)
                         widget.update(clean)
+                        widget.scroll_end(animate=False)
                     except Exception:
                         pass
 
@@ -547,7 +640,7 @@ class HermesGateApp(App):
             except Exception:
                 await asyncio.sleep(3)
 
-    # ─── 用户输入 → 发送到远端 tmux ───────────────────────────────
+    # ─── User Input → Send to Remote tmux ──────────────────────────
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id != "hermes-input" or self._phase != "viewer":
@@ -560,7 +653,7 @@ class HermesGateApp(App):
 
     @work(exit_on_error=False)
     async def _send_to_remote(self, text: str) -> None:
-        """通过 SSH 把用户输入发送到远端 tmux session"""
+        """Send user input to remote tmux session via SSH"""
         if not self.session_mgr or self._current_session_id is None:
             return
         name = f"gate-{self._current_session_id}"
@@ -571,12 +664,22 @@ class HermesGateApp(App):
 
         # 分两步：先发送文本，再发送 Enter
         proc = await asyncio.create_subprocess_exec(
-            "ssh", "-o", "BatchMode=yes",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "ConnectTimeout=5",
-            "-p", mgr.port,
-            f"{mgr.user}@{mgr.host}",
-            "tmux", "send-keys", "-t", name, "-l", safe,
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "ConnectTimeout=5",
+            "-p",
+            mgr.port,
+            f"{mgr.user}@{mgr._ip}",
+            "tmux",
+            "send-keys",
+            "-t",
+            name,
+            "-l",
+            safe,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
@@ -584,26 +687,36 @@ class HermesGateApp(App):
 
         # 发送回车
         proc2 = await asyncio.create_subprocess_exec(
-            "ssh", "-o", "BatchMode=yes",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", "ConnectTimeout=5",
-            "-p", mgr.port,
-            f"{mgr.user}@{mgr.host}",
-            "tmux", "send-keys", "-t", name, "Enter",
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            "ConnectTimeout=5",
+            "-p",
+            mgr.port,
+            f"{mgr.user}@{mgr._ip}",
+            "tmux",
+            "send-keys",
+            "-t",
+            name,
+            "Enter",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         await asyncio.wait_for(proc2.communicate(), timeout=10)
 
-    # ─── 网络监控 ─────────────────────────────────────────────────
+    # ─── Network Monitor ────────────────────────────────────────────
 
     @work(exit_on_error=False)
     async def _start_network_monitor(self) -> None:
         if not self.net_monitor:
             return
         await self.net_monitor.start()
+        was_reconnecting = False
         while self._phase in ("viewer", "session"):
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)
             state = self.net_monitor.state
             try:
                 dot = self.query_one("#net-status", StatusDot)
@@ -617,11 +730,32 @@ class HermesGateApp(App):
                 idot.net = state.status.value
             except Exception:
                 pass
+            if state.reconnecting and self._phase == "viewer":
+                was_reconnecting = True
+                try:
+                    output = self.query_one("#hermes-output", Static)
+                    output.update(
+                        f"🔄 Network disconnected! Reconnecting...\n\n"
+                        f"   Countdown: {state.countdown}s\n"
+                        f"   Attempt #{state.reconnect_attempt}\n\n"
+                        f"   Remote hermes is still running, will auto-resume after reconnection"
+                    )
+                except Exception:
+                    pass
+            elif (
+                was_reconnecting and not state.reconnecting and self._phase == "viewer"
+            ):
+                was_reconnecting = False
+                try:
+                    output = self.query_one("#hermes-output", Static)
+                    output.update("✅ Reconnected! Resuming output...")
+                except Exception:
+                    pass
 
-    # ─── 导航 ─────────────────────────────────────────────────────
+    # ─── Navigation ────────────────────────────────────────────────
 
     def action_attach_session(self) -> None:
-        """Enter 键连接 session"""
+        """Enter key to attach session"""
         if self._phase != "session":
             return
         idx = self.query_one("#session-list", ListView).index
@@ -629,31 +763,30 @@ class HermesGateApp(App):
             return
         s = self.sessions[idx]
         if not s.get("alive"):
-            self._hint("session-hint", f"{s['name']} 已失效，请刷新")
+            self._hint("session-hint", f"{s['name']} is dead, please refresh")
             return
         self._enter_viewer(s["id"])
 
     def action_back(self) -> None:
-        """Shift+Tab / Esc — 统一返回上一级
+        """Shift+Tab / Esc — Go back to previous level
 
-        viewer → session 列表（远端 hermes 不受影响，tmux 仍在后台跑）
-        session 列表 → 服务器选择
-        服务器选择 → 无操作（已是最顶层）
+        viewer → session list (remote hermes unaffected, tmux keeps running in background)
+        session list → server selection
+        server selection → no-op (already at top level)
         """
-        # 停止网络监控（所有 back 场景都要）
+        # Stop network monitor (all back scenarios)
         if self.net_monitor:
             asyncio.create_task(self.net_monitor.stop())
             self.net_monitor = None
 
         if self._phase == "viewer":
-            # 回到 session 列表（远端 tmux 不 kill）
+            # Return to session list (remote tmux not killed)
             self._phase = "session"
             if self._server and self.session_mgr:
-                self._show_session_list(
-                    self._server["user"], self._server["host"])
+                self._show_session_list(self._server["user"], self._server["host"])
 
         elif self._phase == "session":
-            # 回到服务器选择
+            # Return to server selection
             self._show_server_select()
 
     async def on_shutdown_request(self) -> None:
@@ -662,10 +795,13 @@ class HermesGateApp(App):
         await super().on_shutdown_request()
 
 
-# ─── 工具函数 ──────────────────────────────────────────────────────
+# ─── Utility Functions ────────────────────────────────────────────
 
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[.*?[a-zA-Z]|\x1b\([A-Z]")
+_ANSI_RE = re.compile(
+    r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[.*?[a-zA-Z]|\x1b\([A-Z]"
+)
+
 
 def _strip_ansi(text: str) -> str:
-    """去除 ANSI 转义序列"""
+    """Strip ANSI escape sequences"""
     return _ANSI_RE.sub("", text)

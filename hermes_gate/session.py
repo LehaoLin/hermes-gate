@@ -1,9 +1,12 @@
-"""远端 tmux session 管理 + 本地记录"""
+"""Remote tmux session management + local records"""
+
 import json
 import os
 import subprocess
 from datetime import datetime
 from pathlib import Path
+
+from hermes_gate.servers import resolve_to_ip
 
 
 def _config_dir() -> Path:
@@ -13,12 +16,12 @@ def _config_dir() -> Path:
 
 
 def _sessions_file(user: str, host: str) -> Path:
-    """每个服务器一个本地记录文件"""
+    """One local record file per server"""
     return _config_dir() / f"sessions_{user}@{host}.json"
 
 
 def _load_local(user: str, host: str) -> list[dict]:
-    """加载本地 session 记录 [{"id": 0, "created": "..."}, ...]"""
+    """Load local session records [{"id": 0, "created": "..."}, ...]"""
     f = _sessions_file(user, host)
     if not f.exists():
         return []
@@ -34,7 +37,7 @@ def _save_local(user: str, host: str, sessions: list[dict]) -> None:
 
 
 def _next_id(sessions: list[dict]) -> int:
-    """从 0 开始遍历，找到第一个不存在的 id"""
+    """Find the first available id starting from 0"""
     used = {s["id"] for s in sessions}
     i = 0
     while i in used:
@@ -43,22 +46,28 @@ def _next_id(sessions: list[dict]) -> int:
 
 
 class SessionManager:
-    """管理服务器上的 tmux session，本地记录跟踪"""
+    """Manage tmux sessions on server, tracked with local records"""
 
     def __init__(self, user: str, host: str, port: str = "22"):
         self.user = user
         self.host = host
+        self._ip = resolve_to_ip(host)
         self.port = port
 
-    # ─── SSH 底层 ──────────────────────────────────────────────────
+    # ─── SSH Low-level ─────────────────────────────────────────────
 
     def _ssh_cmd(self, *args, timeout: int = 10) -> subprocess.CompletedProcess:
         cmd = [
-            "ssh", "-o", "BatchMode=yes",
-            "-o", "StrictHostKeyChecking=no",
-            "-o", f"ConnectTimeout={timeout}",
-            "-p", self.port,
-            f"{self.user}@{self.host}",
+            "ssh",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "StrictHostKeyChecking=no",
+            "-o",
+            f"ConnectTimeout={timeout}",
+            "-p",
+            self.port,
+            f"{self.user}@{self._ip}",
             *args,
         ]
         return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout + 5)
@@ -67,18 +76,16 @@ class SessionManager:
         result = self._ssh_cmd(*args, timeout=timeout)
         return result.stdout.strip()
 
-    # ─── Session 操作 ──────────────────────────────────────────────
+    # ─── Session Operations ────────────────────────────────────────
 
     def list_sessions(self) -> list[dict]:
-        """列出本地记录的所有 session（附带远端存活状态）"""
+        """List all locally recorded sessions (with remote alive status)"""
         local = _load_local(self.user, self.host)
         if not local:
             return []
 
-        # 查远端哪些 tmux session 还活着
-        output = self._ssh_output(
-            "tmux list-sessions -F '#{session_name}' 2>/dev/null"
-        )
+        # Check which remote tmux sessions are alive
+        output = self._ssh_output("tmux list-sessions -F '#{session_name}' 2>/dev/null")
         alive = set(output.splitlines()) if output else set()
 
         result = []
@@ -90,18 +97,29 @@ class SessionManager:
         return result
 
     def create_session(self) -> dict:
-        """新建 session：找最小可用 id → 远端创建 tmux → 本地记录"""
+        """Create session: find smallest available id → create remote tmux → save local record"""
         local = _load_local(self.user, self.host)
-        sid = _next_id(local)
+
+        remote_output = self._ssh_output(
+            "tmux list-sessions -F '#{session_name}' 2>/dev/null"
+        )
+        remote_names = set(remote_output.splitlines()) if remote_output else set()
+
+        local_ids = {s["id"] for s in local}
+        sid = 0
+        while True:
+            if sid not in local_ids and f"gate-{sid}" not in remote_names:
+                break
+            sid += 1
+
         name = f"gate-{sid}"
         now = datetime.now().isoformat(timespec="seconds")
 
-        # 远端创建 detached tmux session，运行 hermes tui
-        result = self._ssh_cmd(
-            f"tmux new-session -d -s {name} 'hermes tui'"
-        )
+        result = self._ssh_cmd(f"tmux new-session -d -s {name} 'bash -l -c hermes'")
         if result.returncode != 0:
-            raise RuntimeError(f"远端创建 session 失败: {result.stderr.strip()}")
+            raise RuntimeError(
+                f"Failed to create remote session: {result.stderr.strip()}"
+            )
 
         entry = {"id": sid, "created": now}
         local.append(entry)
@@ -112,11 +130,11 @@ class SessionManager:
         return entry
 
     def kill_session(self, session_id: int) -> bool:
-        """杀死远端 session 并从本地记录移除"""
+        """Kill remote session and remove from local records"""
         name = f"gate-{session_id}"
         result = self._ssh_cmd(f"tmux kill-session -t {name} 2>/dev/null")
 
-        # 无论远端是否成功，都从本地移除
+        # Remove from local regardless of remote success
         local = _load_local(self.user, self.host)
         local = [s for s in local if s["id"] != session_id]
         _save_local(self.user, self.host, local)
@@ -124,23 +142,35 @@ class SessionManager:
         return result.returncode == 0
 
     def attach_cmd(self, session_id: int) -> list[str]:
-        """返回 mosh/ssh 连接命令"""
         name = f"gate-{session_id}"
         if self._has_mosh():
             return [
-                "mosh", "--ssh", f"ssh -p {self.port}",
-                f"{self.user}@{self.host}",
-                "--", "tmux", "attach", "-d", "-t", name,
+                "mosh",
+                "--ssh",
+                f"ssh -p {self.port}",
+                f"{self.user}@{self._ip}",
+                "--",
+                "tmux",
+                "attach",
+                "-d",
+                "-t",
+                name,
             ]
         else:
             return [
-                "ssh", "-o", "BatchMode=yes",
-                "-o", "StrictHostKeyChecking=no",
-                "-p", self.port,
-                f"{self.user}@{self.host}",
-                "-t", f"tmux attach -d -t {name}",
+                "ssh",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "StrictHostKeyChecking=no",
+                "-p",
+                self.port,
+                f"{self.user}@{self._ip}",
+                "-t",
+                f"tmux attach -d -t {name}",
             ]
 
     def _has_mosh(self) -> bool:
         import shutil
+
         return shutil.which("mosh") is not None

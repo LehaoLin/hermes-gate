@@ -1,4 +1,5 @@
 """服务器历史记录管理"""
+
 import json
 import os
 from pathlib import Path
@@ -52,36 +53,47 @@ def remove_server(user: str, host: str) -> None:
     save_servers(servers)
 
 
+def _resolve_from_hosts(host: str) -> str | None:
+    for path in ("/host/etc/hosts", "/etc/hosts"):
+        try:
+            with open(path) as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        ip = parts[0]
+                        names = parts[1:]
+                        if host in names:
+                            return ip
+        except OSError:
+            pass
+    return None
+
+
 def resolve_host(host: str) -> tuple[str, str | None]:
     """
     解析 host：
     - 如果是 IP，返回 (ip, None)
-    - 如果是 hostname，查找 /etc/hosts 得到 IP，返回 (hostname, ip)
-      （即显示名, 底层IP）
-    如果 /etc/hosts 中找不到，返回 (host, None)
+    - 如果是 hostname，查找 /host/etc/hosts → /etc/hosts 得到 IP，返回 (hostname, ip)
+    如果找不到，返回 (host, None)
     """
-    # 简单判断是否是 IP
     parts = host.split(".")
     if len(parts) == 4 and all(p.isdigit() for p in parts):
         return host, None
 
-    # 查 /etc/hosts
-    try:
-        with open("/etc/hosts") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                parts = line.split()
-                if len(parts) >= 2:
-                    ip = parts[0]
-                    names = parts[1:]
-                    if host in names:
-                        return host, ip
-    except OSError:
-        pass
+    ip = _resolve_from_hosts(host)
+    if ip:
+        return host, ip
 
     return host, None
+
+
+def resolve_to_ip(host: str) -> str:
+    """将 hostname 解析为 IP，用于 SSH/ping 连接。无法解析则原样返回。"""
+    _, ip = resolve_host(host)
+    return ip or host
 
 
 def display_name(server: dict) -> str:

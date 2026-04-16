@@ -8,6 +8,8 @@ services:
       - SERVER_PORT=${SERVER_PORT:-22}
     volumes:
       - ~/.ssh:/root/.ssh:ro
+      - ./hermes_gate:/app/hermes_gate
+      - /etc/hosts:/host/etc/hosts:ro
     stdin_open: true
     tty: true
     restart: unless-stopped
