@@ -7,7 +7,7 @@ services:
       - SERVER_USER=${SERVER_USER:-root}
       - SERVER_PORT=${SERVER_PORT:-22}
     volumes:
-      - ~/.ssh:/home/hermes/.ssh:ro
+      - ~/.ssh:/root/.ssh:ro
     stdin_open: true
     tty: true
     restart: unless-stopped

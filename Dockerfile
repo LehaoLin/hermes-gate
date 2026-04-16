@@ -1,6 +1,5 @@
-FROM alpine:latest
+FROM python:3.12-alpine
 
-# 安装依赖：bash, ssh, mosh, tmux, fzf, jq, ping, ps
 RUN apk add --no-cache \
     bash \
     openssh-client \
@@ -12,14 +11,14 @@ RUN apk add --no-cache \
     procps \
     bc
 
-# 创建非 root 用户
-RUN adduser -D -s /bin/bash hermes
-USER hermes
-WORKDIR /home/hermes
+WORKDIR /app
 
-# 复制 tmux 配置和脚本
-COPY --chown=hermes:hermes tmux-local.conf /home/hermes/.tmux.conf
-COPY --chown=hermes:hermes entrypoint.sh hermes-manager.sh netwatch.sh render-status.sh /home/hermes/
-RUN chmod +x /home/hermes/*.sh
+COPY pyproject.toml requirements.txt ./
+COPY hermes_gate/ ./hermes_gate/
 
-ENTRYPOINT ["/home/hermes/entrypoint.sh"]
+RUN pip install --no-cache-dir .
+
+COPY entrypoint.sh .
+RUN chmod +x entrypoint.sh
+
+ENTRYPOINT ["./entrypoint.sh"]
