@@ -46,3 +46,20 @@
 
 - Async tests now execute locally after installing `.[test]`; the previous skipped-async-test state is fixed.
 - `StrictHostKeyChecking=no` remains an existing security debt from the current SSH command defaults. It is not a machine-specific change, but it should be addressed separately before treating the tool as hardened.
+
+## 2026-04-17 - Session Kill Flow Improvements
+
+### Fixed
+
+- Changed the session-list destructive shortcut from lowercase `k` to uppercase `K` to match the issue requirement and reduce accidental activation.
+- Added a confirmation modal before killing a session, with `Kill session <name>? [y/N]` semantics and keyboard/button confirm-cancel flows.
+- Updated remote session teardown to detach attached tmux clients before killing the tmux session.
+- Treated missing remote tmux sessions as a non-fatal cleanup case so the local record is still removed and the list can refresh cleanly.
+- Preserved the local record when remote kill fails for real errors, and surfaced a clear error hint in the TUI instead of silently removing the entry.
+- Returned explicit kill result metadata from `SessionManager.kill_session()` so the app can distinguish success, already-missing tmux sessions, and hard failures.
+
+### Tests
+
+- Added TUI tests for uppercase `K`, confirmation gating, confirmed-vs-cancelled behavior, success messaging, and failure messaging.
+- Added session-manager tests for detach-before-kill ordering, missing-tmux cleanup, tmux-missing errors, and local-record preservation on remote kill failure.
+- Validation run: `. .venv/bin/activate && pytest -q` (`50 passed`).

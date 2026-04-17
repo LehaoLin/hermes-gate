@@ -105,6 +105,53 @@ class ConnectingScreen(ModalScreen):
             pass
 
 
+class ConfirmKillScreen(ModalScreen[bool]):
+    CSS = """
+    ConfirmKillScreen { align: center middle; }
+    #kill-dialog {
+        width: 60; height: auto;
+        border: thick $error; background: $surface; padding: 1 2;
+    }
+    #kill-title { text-style: bold; margin-bottom: 1; }
+    #kill-hint { color: $text-muted; margin-top: 1; }
+    #kill-btn-row { layout: horizontal; height: auto; margin-top: 1; }
+    #kill-btn-row Button { margin-right: 1; }
+    """
+    BINDINGS = [
+        Binding("y", "confirm", "Confirm"),
+        Binding("n", "cancel", "Cancel"),
+        Binding("escape", "cancel", "Cancel"),
+        Binding("enter", "confirm", "Confirm"),
+    ]
+
+    def __init__(self, session_name: str):
+        super().__init__()
+        self.session_name = session_name
+
+    def compose(self) -> ComposeResult:
+        with Container(id="kill-dialog"):
+            yield Label(f"Kill session {self.session_name}? [y/N]", id="kill-title")
+            yield Label(
+                "This will detach any attached client, stop the remote Hermes session, and kill the tmux session."
+            )
+            with Horizontal(id="kill-btn-row"):
+                yield Button("Kill", variant="error", id="btn-confirm-kill")
+                yield Button("Cancel", variant="default", id="btn-cancel-kill")
+            yield Label("Enter/Y confirm · N/Esc cancel", id="kill-hint")
+
+    def on_mount(self) -> None:
+        self.query_one("#btn-cancel-kill", Button).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(event.button.id == "btn-confirm-kill")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
 # ─── Main Application ────────────────────────────────────────────
 
 
@@ -145,7 +192,7 @@ class HermesGateApp(App):
     _BIND_SESSION = [
         Binding("ctrl+q", "noop", show=False),
         Binding("n", "new_session", "New"),
-        Binding("k", "kill_session", "Kill"),
+        Binding("K", "kill_session", "Kill"),
         Binding("r", "refresh", "Refresh"),
         Binding("enter", "attach_session", "Attach"),
         Binding("escape", "back", "Back"),
@@ -502,7 +549,14 @@ class HermesGateApp(App):
         if idx is None or idx >= len(self.sessions):
             self._hint("session-hint", "Please select a session first")
             return
-        self._kill(self.sessions[idx]["id"])
+        session = self.sessions[idx]
+        name = session.get("name") or f"gate-{session['id']}"
+
+        def handle(confirm: bool) -> None:
+            if confirm:
+                self._kill(session["id"])
+
+        self.push_screen(ConfirmKillScreen(name), handle)
 
     @work(exit_on_error=False)
     async def _kill(self, sid: int) -> None:
@@ -510,13 +564,20 @@ class HermesGateApp(App):
             return
         name = f"gate-{sid}"
         loop = asyncio.get_event_loop()
-        ok = await loop.run_in_executor(None, self.session_mgr.kill_session, sid)
-        self._hint(
-            "session-hint",
-            f"Killed {name}"
-            if ok
-            else f"{name} no longer exists on remote, record removed",
-        )
+        try:
+            result = await loop.run_in_executor(None, self.session_mgr.kill_session, sid)
+        except Exception as e:
+            self._hint("session-hint", f"Failed to kill {name}: {e}")
+            return
+
+        if result.get("tmux_missing"):
+            self._hint(
+                "session-hint",
+                f"{name} tmux session already missing, local record removed",
+                error=False,
+            )
+        else:
+            self._hint("session-hint", f"Killed {name}", error=False)
         self._refresh_sessions()
 
     # ═══════════════════════════════════════════════════════════════
