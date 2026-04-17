@@ -6,7 +6,7 @@ from hermes_gate.app import HermesGateApp
 
 
 @pytest.mark.asyncio
-async def test_local_interaction_n_key_triggers_new_session_action():
+async def test_local_interaction_uppercase_n_triggers_new_session_action():
     app = HermesGateApp()
     app._show_server_select = lambda: None
     app._phase = "session"
@@ -14,7 +14,7 @@ async def test_local_interaction_n_key_triggers_new_session_action():
     app.action_new_session = lambda: called.append("new")
 
     async with app.run_test() as pilot:
-        await pilot.press("n")
+        await pilot.press("N")
 
     assert called == ["new"]
 
@@ -34,7 +34,7 @@ async def test_local_interaction_uppercase_k_triggers_kill_session_action():
 
 
 @pytest.mark.asyncio
-async def test_local_interaction_n_is_ignored_outside_session_phase():
+async def test_local_interaction_uppercase_n_is_ignored_outside_session_phase():
     app = HermesGateApp()
     app._show_server_select = lambda: None
     app._phase = "select"
@@ -42,6 +42,6 @@ async def test_local_interaction_n_is_ignored_outside_session_phase():
     app.action_new_session = lambda: called.append("new")
 
     async with app.run_test() as pilot:
-        await pilot.press("n")
+        await pilot.press("N")
 
     assert called == []

@@ -106,6 +106,7 @@ class ConnectingScreen(ModalScreen):
 
 
 class ConfirmKillScreen(ModalScreen[bool]):
+    HINT_TEXT = "enter/y kill · Esc/n cancel"
     CSS = """
     ConfirmKillScreen { align: center middle; }
     #kill-dialog {
@@ -132,7 +133,7 @@ class ConfirmKillScreen(ModalScreen[bool]):
             yield Label(
                 "This will detach any attached client, stop the remote Hermes session, and kill the tmux session."
             )
-            yield Label("enter/y kill · n/Esc cancel", id="kill-hint")
+            yield Label(self.HINT_TEXT, id="kill-hint")
 
     def action_confirm(self) -> None:
         self.dismiss(True)
@@ -171,7 +172,7 @@ class HermesGateApp(App):
         Binding("ctrl+q", "noop", show=False),
         Binding("q", "quit", "Quit"),
         Binding("d", "delete_server", "Delete"),
-        Binding("n", "new_session", "New"),
+        Binding("N", "new_session", "New"),
         Binding("K", "kill_session", "Kill"),
         Binding("r", "refresh", "Refresh"),
         Binding("enter", "attach_session", "Attach"),
@@ -187,7 +188,7 @@ class HermesGateApp(App):
     ]
     _BIND_SESSION = [
         Binding("ctrl+q", "noop", show=False),
-        Binding("n", "new_session", "New"),
+        Binding("N", "new_session", "New"),
         Binding("K", "kill_session", "Kill"),
         Binding("r", "refresh", "Refresh"),
         Binding("enter", "attach_session", "Attach"),

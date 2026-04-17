@@ -64,4 +64,5 @@
 - Added session-manager tests for detach-before-kill ordering, missing-tmux cleanup, tmux-missing errors, and local-record preservation on remote kill failure.
 - Added binding regression tests to prove session/select shortcuts are installed up front and enabled only in the correct phase.
 - Added confirm-screen tests to lock keyboard-only kill confirmation behavior (`y`/`Enter` confirm, `n`/`Esc` cancel) with no redundant buttons.
-- Validation run: `. .venv/bin/activate && pytest -q` (`59 passed`).
+- Added local interaction tests to verify uppercase `N` creates sessions and uppercase `K` opens kill flow only in session phase.
+- Validation run: `. .venv/bin/activate && pytest -q` (`60 passed`).
