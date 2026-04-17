@@ -587,8 +587,8 @@ class HermesGateApp(App):
             f"tmux set-option -t {q(name)} status-left '⚡ {name} '",
             f"tmux set-option -t {q(name)} status-left-length 30",
             f"tmux set-option -t {q(name)} status-left-style 'fg=#ffffff,bg=#1a1a2e'",
-            f"tmux set-option -t {q(name)} status-right ' ● Connected '",
-            f"tmux set-option -t {q(name)} status-right-length 20",
+            f"tmux set-option -t {q(name)} status-right ' ● Connected   Ctrl+B: Back '",
+            f"tmux set-option -t {q(name)} status-right-length 40",
             f"tmux set-option -t {q(name)} status-right-style 'fg=#00ff00,bg=#1a1a2e'",
         ])
         remote_cmd = f"bash -l -c {q(commands)}"
