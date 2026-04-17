@@ -107,6 +107,7 @@ class ConnectingScreen(ModalScreen):
 
 class ConfirmKillScreen(ModalScreen[bool]):
     HINT_TEXT = "enter/y kill · Esc/n cancel"
+    TITLE_TEMPLATE = "Kill session {session_name}? [y/n]"
     CSS = """
     ConfirmKillScreen { align: center middle; }
     #kill-dialog {
@@ -126,10 +127,11 @@ class ConfirmKillScreen(ModalScreen[bool]):
     def __init__(self, session_name: str):
         super().__init__()
         self.session_name = session_name
+        self.TITLE_TEXT = self.TITLE_TEMPLATE.format(session_name=session_name)
 
     def compose(self) -> ComposeResult:
         with Container(id="kill-dialog"):
-            yield Label(f"Kill session {self.session_name}? [y/N]", id="kill-title")
+            yield Label(self.TITLE_TEXT, id="kill-title")
             yield Label(
                 "This will detach any attached client, stop the remote Hermes session, and kill the tmux session."
             )

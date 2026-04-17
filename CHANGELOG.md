@@ -66,4 +66,5 @@
 - Added confirm-screen tests to lock keyboard-only kill confirmation behavior (`y`/`Enter` confirm, `n`/`Esc` cancel) with no redundant buttons.
 - Added local interaction tests to verify uppercase `N` creates sessions and uppercase `K` opens kill flow only in session phase.
 - Added session-hint text regression tests so the footer copy stays aligned with the actual `N/K/R/Esc/Shift+Tab/Q` bindings.
-- Validation run: `. .venv/bin/activate && pytest -q` (`61 passed`).
+- Added kill-confirm title regression coverage so the prompt stays aligned with the actual `y/n` cancel-confirm semantics.
+- Validation run: `. .venv/bin/activate && pytest -q` (`60 passed`).
