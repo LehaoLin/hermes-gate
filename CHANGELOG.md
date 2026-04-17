@@ -65,4 +65,5 @@
 - Added binding regression tests to prove session/select shortcuts are installed up front and enabled only in the correct phase.
 - Added confirm-screen tests to lock keyboard-only kill confirmation behavior (`y`/`Enter` confirm, `n`/`Esc` cancel) with no redundant buttons.
 - Added local interaction tests to verify uppercase `N` creates sessions and uppercase `K` opens kill flow only in session phase.
-- Validation run: `. .venv/bin/activate && pytest -q` (`60 passed`).
+- Added session-hint text regression tests so the footer copy stays aligned with the actual `N/K/R/Esc/Shift+Tab/Q` bindings.
+- Validation run: `. .venv/bin/activate && pytest -q` (`61 passed`).

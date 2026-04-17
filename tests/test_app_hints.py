@@ -25,6 +25,6 @@ def test_hint_reset_clears_inline_color_instead_of_setting_theme_variable():
 
     timers[0]()
 
-    expected = "↑↓ Select · Enter Attach · N New · K Kill · Shift+Tab Back"
+    expected = "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Esc/Shift+Tab Back · Q Quit"
     assert str(label.content) == expected
     assert not label.styles.has_rule("color")

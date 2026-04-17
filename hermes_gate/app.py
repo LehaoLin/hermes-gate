@@ -433,7 +433,7 @@ class HermesGateApp(App):
 
             reset_text = {
                 "server-hint": "↑↓ Select · Enter Connect · D Delete · Q Quit",
-                "session-hint": "↑↓ Select · Enter Attach · N New · K Kill · Shift+Tab Back",
+                "session-hint": "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Esc/Shift+Tab Back · Q Quit",
             }.get(hint_id, "")
 
             def reset_hint() -> None:
@@ -466,7 +466,7 @@ class HermesGateApp(App):
                     Label(f"⚡ {server_name} — Sessions", id="session-title"),
                     ListView(id="session-list"),
                     Label(
-                        "↑↓ Select · Enter Attach · N New · K Kill · Shift+Tab Back",
+                        "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Esc/Shift+Tab Back · Q Quit",
                         id="session-hint",
                     ),
                     id="session-box",
