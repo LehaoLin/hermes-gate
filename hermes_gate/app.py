@@ -114,8 +114,6 @@ class ConfirmKillScreen(ModalScreen[bool]):
     }
     #kill-title { text-style: bold; margin-bottom: 1; }
     #kill-hint { color: $text-muted; margin-top: 1; }
-    #kill-btn-row { layout: horizontal; height: auto; margin-top: 1; }
-    #kill-btn-row Button { margin-right: 1; }
     """
     BINDINGS = [
         Binding("y", "confirm", "Confirm"),
@@ -134,16 +132,7 @@ class ConfirmKillScreen(ModalScreen[bool]):
             yield Label(
                 "This will detach any attached client, stop the remote Hermes session, and kill the tmux session."
             )
-            with Horizontal(id="kill-btn-row"):
-                yield Button("Kill", variant="error", id="btn-confirm-kill")
-                yield Button("Cancel", variant="default", id="btn-cancel-kill")
-            yield Label("Enter/Y confirm · N/Esc cancel", id="kill-hint")
-
-    def on_mount(self) -> None:
-        self.query_one("#btn-cancel-kill", Button).focus()
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        self.dismiss(event.button.id == "btn-confirm-kill")
+            yield Label("enter/y kill · n/Esc cancel", id="kill-hint")
 
     def action_confirm(self) -> None:
         self.dismiss(True)
