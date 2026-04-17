@@ -220,27 +220,4 @@ class SessionManager:
 
     def attach_cmd(self, session_id: int) -> list[str]:
         name = f"gate-{session_id}"
-        if self._has_mosh():
-            ssh_cmd = f"ssh -p {self.port}"
-            if self.ssh_alias:
-                ssh_config = ssh_config_path()
-                ssh_cmd = f"ssh -F {ssh_config}" if ssh_config.exists() else "ssh"
-            return [
-                "mosh",
-                "--ssh",
-                ssh_cmd,
-                self.ssh_alias or f"{self.user}@{self._ip}",
-                "--",
-                "tmux",
-                "attach",
-                "-d",
-                "-t",
-                name,
-            ]
-        else:
-            return [*self.ssh_base_args(), "-t", f"tmux attach -d -t {name}"]
-
-    def _has_mosh(self) -> bool:
-        import shutil
-
-        return shutil.which("mosh") is not None
+        return [*self.ssh_base_args(), "-t", f"tmux attach -d -t {name}"]

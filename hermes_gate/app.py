@@ -1,14 +1,13 @@
 """Hermes Gate Main TUI Application — Built with Textual"""
 
 import asyncio
-import re
 import shlex
+import subprocess
 
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, Center
-from textual.events import Key
 from textual.widgets import (
     Header,
     Footer,
@@ -17,14 +16,12 @@ from textual.widgets import (
     ListItem,
     ListView,
     Input,
-    Static,
 )
-from textual.reactive import reactive
 from textual import work
 from textual.screen import ModalScreen
 
 from hermes_gate.session import SessionManager
-from hermes_gate.network import NetworkMonitor, NetStatus
+from hermes_gate.network import NetworkMonitor
 from hermes_gate.servers import (
     load_servers,
     add_server,
@@ -108,44 +105,6 @@ class ConnectingScreen(ModalScreen):
             pass
 
 
-# ─── Status Dot ──────────────────────────────────────────────────
-
-
-class StatusDot(Label):
-    status: reactive[str] = reactive("red")
-
-    def watch_status(self, new_status: str) -> None:
-        from rich.text import Text
-
-        colors = {"green": "#00FF00", "yellow": "#FFFF00", "red": "#FF0000"}
-        labels = {"green": "Connected", "yellow": "Unstable", "red": "OFFLINE"}
-        c = colors.get(new_status, "#FF0000")
-        lb = labels.get(new_status, "?")
-        t = Text()
-        t.append("● ", style=f"bold {c}")
-        t.append(lb, style=c)
-        self.update(t)
-
-    def on_mount(self) -> None:
-        self.status = "red"
-
-
-class InputDot(Label):
-    """Small status dot before the input field"""
-
-    net: reactive[str] = reactive("red")
-
-    def watch_net(self, val: str) -> None:
-        from rich.text import Text
-
-        color = "#00FF00" if val == "green" else "#FF0000"
-        t = Text("● ", style=f"bold {color}")
-        self.update(t)
-
-    def on_mount(self) -> None:
-        self.net = "red"
-
-
 # ─── Main Application ────────────────────────────────────────────
 
 
@@ -153,7 +112,7 @@ class HermesGateApp(App):
     CSS = """
     Screen { layout: vertical; }
 
-    /* ── 选择屏通用 ── */
+    /* ── Select / Session Screens ── */
     #server-screen, #session-screen {
         align: center middle; height: 1fr;
     }
@@ -170,39 +129,6 @@ class HermesGateApp(App):
     #server-hint, #session-hint {
         color: $text-muted; text-align: center;
     }
-
-    /* ── Hermes 查看器 ── */
-    #status-bar {
-        dock: top; height: 3;
-        background: $surface; border-bottom: solid $primary;
-        padding: 0 1; layout: horizontal;
-    }
-    #title { width: auto; padding: 1 2 0 0; }
-    #net-status { width: auto; padding: 1 0 0 0; }
-    #latency { width: auto; padding: 1 0 0 1; color: $text-muted; }
-
-    #viewer-area {
-        height: 1fr; layout: vertical;
-    }
-    #hermes-output {
-        height: 1fr;
-        border: solid $primary;
-        padding: 0 1;
-        overflow-y: auto;
-        background: $surface;
-    }
-    #input-bar {
-        height: 3;
-        padding: 0 1; layout: horizontal;
-        background: $surface;
-        border-top: solid $primary;
-    }
-    #input-dot { width: auto; padding: 1 1 0 0; }
-    #hermes-input { width: 1fr; }
-    #viewer-hint {
-        color: $text-muted; text-align: center;
-        padding: 0 1; height: 1;
-    }
     """
 
     BINDINGS = [
@@ -211,7 +137,6 @@ class HermesGateApp(App):
     ]
     TITLE = "⚡ Hermes Gate"
 
-    # 每个 phase 的 bindings（含统一的 Shift+Tab 返回）
     _BIND_SELECT = [
         Binding("ctrl+q", "noop", show=False),
         Binding("d", "delete_server", "Delete"),
@@ -227,14 +152,6 @@ class HermesGateApp(App):
         Binding("shift+tab", "back", "Back"),
         Binding("q", "quit", "Quit"),
     ]
-    _BIND_VIEWER = [
-        Binding("ctrl+q", "noop", show=False),
-        Binding("ctrl+c", "remote_interrupt", "Remote Interrupt"),
-        Binding("escape", "back", "Back", show=False),
-        Binding("shift+tab", "back", "Back", show=False),
-        Binding("ctrl+b", "back", "Back"),
-        Binding("ctrl+e", "remote_escape", "Remote Esc"),
-    ]
 
     def __init__(self):
         super().__init__()
@@ -242,8 +159,7 @@ class HermesGateApp(App):
         self.net_monitor: NetworkMonitor | None = None
         self.sessions: list[dict] = []
         self._server: dict | None = None
-        self._current_session_id: int | None = None
-        self._phase = "select"  # select | session | viewer
+        self._phase = "select"  # select | session
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -257,9 +173,10 @@ class HermesGateApp(App):
     # ═══════════════════════════════════════════════════════════════
 
     def _clear(self) -> None:
-        for wid in ("server-screen", "session-screen", "status-bar", "viewer-area"):
+        for wid in ("server-screen", "session-screen"):
             try:
-                self.query_one(f"#{wid}").remove()
+                widget = self.query_one(f"#{wid}")
+                widget.remove()
             except Exception:
                 pass
 
@@ -337,6 +254,7 @@ class HermesGateApp(App):
 
             # Try resolving as SSH config alias (e.g. "prod-server")
             from hermes_gate.servers import resolve_ssh_config
+
             ssh_cfg = resolve_ssh_config(text)
             if ssh_cfg:
                 ssh_cfg["ssh_alias"] = text
@@ -404,7 +322,9 @@ class HermesGateApp(App):
 
         self.run_worker(_do(), exclusive=True)
 
-    async def _ssh_ok(self, user: str, host: str, port: str = "22", ssh_alias: str | None = None) -> bool:
+    async def _ssh_ok(
+        self, user: str, host: str, port: str = "22", ssh_alias: str | None = None
+    ) -> bool:
         try:
             mgr = SessionManager(user, host, port, ssh_alias=ssh_alias)
             p = await asyncio.create_subprocess_exec(
@@ -419,7 +339,9 @@ class HermesGateApp(App):
         except Exception:
             return False
 
-    async def _hermes_ok(self, user: str, host: str, port: str = "22", ssh_alias: str | None = None) -> bool:
+    async def _hermes_ok(
+        self, user: str, host: str, port: str = "22", ssh_alias: str | None = None
+    ) -> bool:
         return await self._remote_command_ok(
             user,
             host,
@@ -459,7 +381,6 @@ class HermesGateApp(App):
             reset_text = {
                 "server-hint": "↑↓ Select · Enter Connect · D Delete · Q Quit",
                 "session-hint": "↑↓ Select · Enter Attach · N New · K Kill · Shift+Tab Back",
-                "viewer-hint": "Ctrl+B Back · Ctrl+C Interrupt · Ctrl+E Remote Esc · Enter Send",
             }.get(hint_id, "")
 
             def reset_hint() -> None:
@@ -599,221 +520,113 @@ class HermesGateApp(App):
         self._refresh_sessions()
 
     # ═══════════════════════════════════════════════════════════════
-    # Step 3: Hermes Viewer (live output + input + network dot)
+    # Step 3: Attach to Remote tmux Session
     # ═══════════════════════════════════════════════════════════════
 
     def _enter_viewer(self, session_id: int) -> None:
-        """Enter hermes viewer interface"""
-        self._phase = "viewer"
-        self._current_session_id = session_id
-        self._clear()
+        """Suspend TUI and attach to remote tmux session via SSH.
 
-        name = f"gate-{session_id}"
-        server_name = display_name(self._server) if self._server else name
-
-        self.BINDINGS = self._BIND_VIEWER
-
-        self.mount(
-            Horizontal(
-                Label(f"⚡ {server_name} → {name}", id="title"),
-                StatusDot(id="net-status"),
-                Label("", id="latency"),
-                id="status-bar",
-            ),
-            Vertical(
-                Static("", id="hermes-output"),
-                Horizontal(
-                    InputDot(id="input-dot"),
-                    Input(
-                        placeholder="Enter prompt to send to remote hermes ...",
-                        id="hermes-input",
-                    ),
-                    id="input-bar",
-                ),
-                Label(
-                    "Ctrl+B Back · Ctrl+C Interrupt · Ctrl+E Remote Esc · Enter Send",
-                    id="viewer-hint",
-                ),
-                id="viewer-area",
-            ),
-        )
-
-        self.query_one("#hermes-input", Input).focus()
-        self._start_network_monitor()
-        self._start_output_poll(session_id)
-
-    # ─── Poll Remote tmux Output ───────────────────────────────────
-
-    @work(exit_on_error=False)
-    async def _start_output_poll(self, session_id: int) -> None:
-        """Poll remote tmux pane content every 1.5s via SSH"""
-        name = f"gate-{session_id}"
+        The user gets a real terminal with the remote tmux session.
+        - Ctrl+B detaches and returns to the session list.
+        - A green status bar at the bottom shows connection status.
+        """
         mgr = self.session_mgr
         if not mgr:
             return
-        prev_content = ""
-        last_error = ""
+        name = f"gate-{session_id}"
 
-        while (
-            self._phase == "viewer"
-            and self.session_mgr is mgr
-            and self._current_session_id == session_id
-        ):
-            try:
-                proc = await asyncio.create_subprocess_exec(
-                    *mgr.ssh_base_args(timeout=5),
-                    mgr.tmux_command(*_tmux_capture_args(name)),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
-                if proc.returncode != 0:
-                    err = stderr.decode(errors="replace").strip() or "capture-pane failed"
-                    raise RuntimeError(err)
-                raw = stdout.decode(errors="replace")
+        # Stop network monitor before suspending
+        if self.net_monitor:
+            asyncio.create_task(self.net_monitor.stop())
+            self.net_monitor = None
 
-                clean = _strip_ansi(raw)
+        # Configure tmux: Ctrl+B → detach, green status bar at bottom
+        self._configure_tmux_for_attach(mgr, name)
 
-                if clean != prev_content:
-                    prev_content = clean
-                    try:
-                        widget = self.query_one("#hermes-output", Static)
-                        widget.update(_tmux_capture_to_text(raw))
-                        widget.scroll_end(animate=False)
-                    except Exception:
-                        pass
+        # Suspend Textual and run SSH/mosh attach — user gets real terminal
+        cmd = mgr.attach_cmd(session_id)
+        try:
+            with self.suspend():
+                subprocess.call(cmd)
+        except Exception:
+            # Fallback if suspend fails — just run directly
+            subprocess.call(cmd)
 
-                last_error = ""
-                await asyncio.sleep(1.5)
-            except Exception as exc:
-                err = str(exc) or exc.__class__.__name__
-                if err != last_error:
-                    last_error = err
-                    self._hint("viewer-hint", f"Output refresh failed: {err}")
-                await asyncio.sleep(3)
+        # Restore tmux session options to defaults
+        self._restore_tmux_after_detach(mgr, name)
 
-    # ─── User Input → Send to Remote tmux ──────────────────────────
+        # Return to session list (refreshed)
+        if self._server and self.session_mgr:
+            self._show_session_list(
+                self._server["user"],
+                self._server["host"],
+                self._server.get("port", "22"),
+                self._server.get("ssh_alias"),
+            )
 
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id != "hermes-input" or self._phase != "viewer":
-            return
-        text = event.value
-        if not text:
-            return
-        event.input.value = ""
-        self._send_to_remote(text)
+    # ─── tmux Configuration ─────────────────────────────────────────
 
-    def action_remote_escape(self) -> None:
-        """Send Escape/C-u to the remote Hermes pane without leaving the viewer."""
-        if self._phase == "viewer":
-            self._send_keys_to_remote("Escape", "C-u")
+    def _configure_tmux_for_attach(self, mgr: SessionManager, name: str) -> None:
+        """Configure tmux session for interactive attach.
 
-    def action_remote_interrupt(self) -> None:
-        """Interrupt the current remote Hermes request without leaving the viewer."""
-        if self._phase == "viewer":
-            self._send_keys_to_remote("C-c")
+        - Changes prefix from C-b to C-a (so C-b is free for detach)
+        - Binds C-b in root table to detach-client
+        - Sets a green status bar at the bottom showing connection status
 
-    @work(exit_on_error=False)
-    async def _send_to_remote(self, text: str) -> None:
-        """Send user input to remote tmux session via SSH stdin + tmux buffer.
-
-        User text goes through stdin only — never into the remote command string —
-        so shell metacharacters cannot be interpreted by the remote shell.
+        All commands are batched into a single SSH call for speed.
         """
-        if not self.session_mgr or self._current_session_id is None:
-            return
-        name = f"gate-{self._current_session_id}"
-        mgr = self.session_mgr
+        q = shlex.quote
+        commands = " && ".join([
+            # Change prefix to C-a so C-b can be used for detach
+            f"tmux set-option -t {q(name)} prefix C-a",
+            # Bind C-b in root table to detach directly
+            f"tmux bind-key -T root C-b detach-client",
+            # Status bar: green connection indicator at the bottom
+            f"tmux set-option -t {q(name)} status on",
+            f"tmux set-option -t {q(name)} status-position bottom",
+            f"tmux set-option -t {q(name)} status-style 'bg=#1a1a2e,fg=#00ff00'",
+            f"tmux set-option -t {q(name)} status-left '⚡ {name} '",
+            f"tmux set-option -t {q(name)} status-left-length 30",
+            f"tmux set-option -t {q(name)} status-left-style 'fg=#ffffff,bg=#1a1a2e'",
+            f"tmux set-option -t {q(name)} status-right ' ● Connected '",
+            f"tmux set-option -t {q(name)} status-right-length 20",
+            f"tmux set-option -t {q(name)} status-right-style 'fg=#00ff00,bg=#1a1a2e'",
+        ])
+        remote_cmd = f"bash -l -c {q(commands)}"
 
-        # Build fixed remote command: load buffer from stdin, paste, send Enter.
-        # Session name is always gate-{id} — never user-supplied.
-        remote_cmd = _build_tmux_send_command(name)
+        try:
+            subprocess.run(
+                [*mgr.ssh_base_args(timeout=8), remote_cmd],
+                capture_output=True,
+                timeout=15,
+            )
+        except Exception:
+            pass  # Best effort — don't block attach if config fails
 
-        proc = await asyncio.create_subprocess_exec(
-            *mgr.ssh_base_args(timeout=10),
-            mgr.login_shell_command(remote_cmd),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(input=text.encode("utf-8")),
-            timeout=15,
-        )
-        if proc.returncode != 0:
-            err = stderr.decode(errors="replace").strip() or "send failed"
-            self._hint("viewer-hint", f"Send failed: {err}")
-            return
-        self._hint("viewer-hint", "Sent", error=False)
+    def _restore_tmux_after_detach(self, mgr: SessionManager, name: str) -> None:
+        """Restore tmux session options to defaults after detach."""
+        q = shlex.quote
+        commands = " && ".join([
+            f"tmux set-option -t {q(name)} prefix C-b",
+            f"tmux unbind-key -T root C-b",
+            f"tmux set-option -u -t {q(name)} status-style",
+            f"tmux set-option -u -t {q(name)} status-left",
+            f"tmux set-option -u -t {q(name)} status-left-length",
+            f"tmux set-option -u -t {q(name)} status-left-style",
+            f"tmux set-option -u -t {q(name)} status-right",
+            f"tmux set-option -u -t {q(name)} status-right-length",
+            f"tmux set-option -u -t {q(name)} status-right-style",
+        ])
+        remote_cmd = f"bash -l -c {q(commands)}"
 
-    @work(exit_on_error=False)
-    async def _send_keys_to_remote(self, *keys: str) -> None:
-        """Send control keys to the remote tmux session."""
-        if not keys or not self.session_mgr or self._current_session_id is None:
-            return
-        name = f"gate-{self._current_session_id}"
-        mgr = self.session_mgr
-        remote_cmd = _build_tmux_key_command(name, *keys)
-        action = _remote_key_action_name(keys)
-
-        proc = await asyncio.create_subprocess_exec(
-            *mgr.ssh_base_args(timeout=10),
-            mgr.login_shell_command(remote_cmd),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        _, stderr = await asyncio.wait_for(proc.communicate(), timeout=10)
-        if proc.returncode != 0:
-            err = stderr.decode(errors="replace").strip() or "key send failed"
-            self._hint("viewer-hint", f"{action} failed: {err}")
-            return
-        self._hint("viewer-hint", f"{action} sent", error=False)
-
-    # ─── Network Monitor ────────────────────────────────────────────
-
-    @work(exit_on_error=False)
-    async def _start_network_monitor(self) -> None:
-        monitor = self.net_monitor
-        if not monitor:
-            return
-        await monitor.start()
-        was_reconnecting = False
-        while self._phase in ("viewer",) and self.net_monitor is monitor:
-            await asyncio.sleep(0.5)
-            state = monitor.state
-            try:
-                dot = self.query_one("#net-status", StatusDot)
-                lat = self.query_one("#latency", Label)
-                dot.status = state.status.value
-                lat.update(state.message)
-            except Exception:
-                pass
-            try:
-                idot = self.query_one("#input-dot", InputDot)
-                idot.net = state.status.value
-            except Exception:
-                pass
-            if state.reconnecting and self._phase == "viewer":
-                was_reconnecting = True
-                try:
-                    output = self.query_one("#hermes-output", Static)
-                    output.update(
-                        f"🔄 Network disconnected! Reconnecting...\n\n"
-                        f"   Countdown: {state.countdown}s\n"
-                        f"   Attempt #{state.reconnect_attempt}\n\n"
-                        f"   Remote hermes is still running, will auto-resume after reconnection"
-                    )
-                except Exception:
-                    pass
-            elif (
-                was_reconnecting and not state.reconnecting and self._phase == "viewer"
-            ):
-                was_reconnecting = False
-                try:
-                    output = self.query_one("#hermes-output", Static)
-                    output.update("✅ Reconnected! Resuming output...")
-                except Exception:
-                    pass
+        try:
+            subprocess.run(
+                [*mgr.ssh_base_args(timeout=8), remote_cmd],
+                capture_output=True,
+                timeout=15,
+            )
+        except Exception:
+            pass
 
     # ─── Navigation ────────────────────────────────────────────────
 
@@ -833,27 +646,14 @@ class HermesGateApp(App):
     def action_back(self) -> None:
         """Shift+Tab / Esc — Go back to previous level
 
-        viewer → session list (remote hermes unaffected, tmux keeps running in background)
         session list → server selection
-        server selection → no-op (already at top level)
         """
         # Stop network monitor (all back scenarios)
         if self.net_monitor:
             asyncio.create_task(self.net_monitor.stop())
             self.net_monitor = None
 
-        if self._phase == "viewer":
-            # Return to session list (remote tmux not killed)
-            self._phase = "session"
-            if self._server and self.session_mgr:
-                self._show_session_list(
-                    self._server["user"],
-                    self._server["host"],
-                    self._server.get("port", "22"),
-                    self._server.get("ssh_alias"),
-                )
-
-        elif self._phase == "session":
+        if self._phase == "session":
             # Return to server selection
             self._show_server_select()
 
@@ -861,56 +661,3 @@ class HermesGateApp(App):
         if self.net_monitor:
             await self.net_monitor.stop()
         await super().on_shutdown_request()
-
-
-# ─── Utility Functions ────────────────────────────────────────────
-
-_ANSI_RE = re.compile(
-    r"\x1b\[[0-9;]*[a-zA-Z]|\x1b\].*?\x07|\x1b\[.*?[a-zA-Z]|\x1b\([A-Z]"
-)
-
-
-def _strip_ansi(text: str) -> str:
-    """Strip ANSI escape sequences"""
-    return _ANSI_RE.sub("", text)
-
-
-def _tmux_capture_to_text(raw: str) -> Text:
-    """Render tmux capture as plain terminal text, not Rich markup."""
-    return Text(_strip_ansi(raw).rstrip("\n"))
-
-
-def _tmux_capture_args(session_name: str) -> tuple[str, ...]:
-    """Capture the current tmux pane view, not scrollback history."""
-    return ("capture-pane", "-t", session_name, "-p")
-
-
-def _tmux_command(*args: str) -> str:
-    """Build one shell-safe tmux command."""
-    return shlex.join(["tmux", *[str(arg) for arg in args]])
-
-
-def _build_tmux_send_command(session_name: str) -> str:
-    """Build the remote tmux command used to inject one complete prompt."""
-    return " && ".join(
-        [
-            _build_tmux_key_command(session_name, "C-u"),
-            _tmux_command("load-buffer", "-b", "hermes-gate-input", "-"),
-            _tmux_command("paste-buffer", "-b", "hermes-gate-input", "-t", session_name),
-            _build_tmux_key_command(session_name, "Enter"),
-        ]
-    )
-
-
-def _build_tmux_key_command(session_name: str, *keys: str) -> str:
-    """Build a shell-safe tmux send-keys command."""
-    return _tmux_command("send-keys", "-t", session_name, *keys)
-
-
-def _remote_key_action_name(keys: tuple[str, ...]) -> str:
-    """Name common remote key actions for user-facing hints."""
-    if keys == ("C-c",):
-        return "Remote interrupt"
-    if keys == ("Escape", "C-u"):
-        return "Remote Esc"
-    return "Remote keys"

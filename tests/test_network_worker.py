@@ -5,10 +5,10 @@ from hermes_gate.network import NetworkMonitor, NetStatus
 
 
 @pytest.mark.asyncio
-async def test_network_worker_exits_when_leaving_viewer():
-    """Worker must stop when phase leaves 'viewer'."""
+async def test_network_worker_exits_when_phase_changes():
+    """Worker must stop when phase changes."""
     monitor = NetworkMonitor("example.com", "22")
-    phase = {"phase": "viewer"}
+    phase = {"phase": "session"}
 
     exited_cleanly = False
 
@@ -16,7 +16,7 @@ async def test_network_worker_exits_when_leaving_viewer():
         nonlocal exited_cleanly
         await monitor.start()
         try:
-            while phase["phase"] == "viewer":
+            while phase["phase"] == "session":
                 await asyncio.sleep(0.02)
         finally:
             exited_cleanly = True
@@ -24,7 +24,7 @@ async def test_network_worker_exits_when_leaving_viewer():
 
     t = asyncio.create_task(worker())
     await asyncio.sleep(0.05)
-    phase["phase"] = "session"  # Leave viewer
+    phase["phase"] = "select"  # Change phase
     await asyncio.sleep(0.05)
     await t
 
