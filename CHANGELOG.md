@@ -62,4 +62,5 @@
 
 - Added TUI tests for uppercase `K`, confirmation gating, confirmed-vs-cancelled behavior, success messaging, and failure messaging.
 - Added session-manager tests for detach-before-kill ordering, missing-tmux cleanup, tmux-missing errors, and local-record preservation on remote kill failure.
-- Validation run: `. .venv/bin/activate && pytest -q` (`50 passed`).
+- Added binding regression tests to prove session/select shortcuts are installed up front and enabled only in the correct phase.
+- Validation run: `. .venv/bin/activate && pytest -q` (`53 passed`).

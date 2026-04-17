@@ -181,6 +181,13 @@ class HermesGateApp(App):
     BINDINGS = [
         Binding("ctrl+q", "noop", show=False),
         Binding("q", "quit", "Quit"),
+        Binding("d", "delete_server", "Delete"),
+        Binding("n", "new_session", "New"),
+        Binding("K", "kill_session", "Kill"),
+        Binding("r", "refresh", "Refresh"),
+        Binding("enter", "attach_session", "Attach"),
+        Binding("escape", "back", "Back"),
+        Binding("shift+tab", "back", "Back"),
     ]
     TITLE = "⚡ Hermes Gate"
 
@@ -230,7 +237,6 @@ class HermesGateApp(App):
     def _show_server_select(self) -> None:
         self._phase = "select"
         self._clear()
-        self.BINDINGS = self._BIND_SELECT
 
         servers = load_servers()
         items = [ListItem(Label(f" 🖥️  {display_name(s)}"), name="srv") for s in servers]
@@ -270,6 +276,16 @@ class HermesGateApp(App):
 
     def action_noop(self) -> None:
         pass
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        session_actions = {"new_session", "kill_session", "refresh", "attach_session", "back"}
+        select_actions = {"delete_server"}
+
+        if action in session_actions:
+            return self._phase == "session"
+        if action in select_actions:
+            return self._phase == "select"
+        return True
 
     def action_delete_server(self) -> None:
         """D key to delete selected server (only removes from servers.json)"""
@@ -452,8 +468,6 @@ class HermesGateApp(App):
         ssh_alias = ssh_alias or find_ssh_alias(user, host, port)
         self.session_mgr = SessionManager(user, host, port, ssh_alias=ssh_alias)
         self.net_monitor = NetworkMonitor(host, port)
-
-        self.BINDINGS = self._BIND_SESSION
 
         server_name = display_name({"user": user, "host": host, "port": port})
         self.mount(
