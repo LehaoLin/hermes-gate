@@ -3,7 +3,7 @@ services:
     build: .
     container_name: hermes-gate
     volumes:
-      - ~/.ssh:/root/.ssh:ro
+      - ~/.ssh:/host/.ssh:ro
       - ./hermes_gate:/app/hermes_gate
       - /etc/hosts:/host/etc/hosts:ro
     stdin_open: true

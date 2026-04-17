@@ -2,23 +2,27 @@
 
 ## 首次使用
 
-### 1. 配置环境变量
-
-```bash
-cp .env.example .env
-# 编辑 .env，填入你的服务器地址
-# SERVER_HOST=xxx.xxx.xxx.xxx
-# SERVER_USER=root
-# SERVER_PORT=22
-```
-
-### 2. 一键启动
+### 1. 一键启动
 
 ```bash
 ./start.sh
 ```
 
-首次运行会自动构建 Docker 镜像并进入 TUI 交互界面。
+首次运行会自动构建 Docker 镜像并进入 TUI 交互界面。无需任何配置文件。
+
+进入后选择「➕ Add Server...」，输入：
+
+```
+用户名@IP地址           例: root@1.2.3.4
+用户名@主机名           例: admin@myserver
+用户名@主机名:端口      例: root@1.2.3.4:2222
+```
+
+### 前置条件
+
+- Docker 已安装并运行
+- 本机 `~/.ssh` 目录下有 SSH 私钥（`id_rsa` 或 `id_ed25519`），且已添加到目标服务器的 `authorized_keys`
+- 远端服务器已安装 `tmux` 和 `hermes`
 
 ## 日常使用
 

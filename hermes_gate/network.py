@@ -1,7 +1,7 @@
 """Network Status Monitor"""
 
 import asyncio
-import subprocess
+import time
 from enum import Enum
 from dataclasses import dataclass
 
@@ -25,13 +25,14 @@ class NetState:
 
 
 class NetworkMonitor:
-    """Async network monitor, periodically pings server, auto-reconnects on disconnect"""
+    """Async network monitor, periodically probes SSH port, auto-reconnects on disconnect."""
 
     RECONNECT_INTERVAL = 5
 
-    def __init__(self, host: str = ""):
+    def __init__(self, host: str = "", port: str = "22"):
         self.host = host
         self._ip = resolve_to_ip(self.host)
+        self.port = port
         self.state = NetState()
         self._running = False
         self._task: asyncio.Task | None = None
@@ -84,33 +85,30 @@ class NetworkMonitor:
             self._reconnect_attempt = 0
 
     async def _probe(self) -> bool:
+        """Probe the SSH port with TCP connect. Returns True if connected."""
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "ping",
-                "-c",
-                "1",
-                "-W",
-                "2",
-                self._ip,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+            t0 = time.monotonic()
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(self._ip, int(self.port)),
+                timeout=5,
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=5)
-            output = stdout.decode()
-            import re
+            latency_ms = (time.monotonic() - t0) * 1000
+            writer.close()
+            await writer.wait_closed()
 
-            match = re.search(r"time=([\d.]+)", output)
-            if match:
-                latency = float(match.group(1))
-                if latency < 200:
-                    self.state = NetState(NetStatus.GREEN, latency, f"{latency:.0f}ms")
-                elif latency < 500:
-                    self.state = NetState(NetStatus.YELLOW, latency, f"{latency:.0f}ms")
-                else:
-                    self.state = NetState(NetStatus.RED, latency, f"{latency:.0f}ms")
-                return self.state.status != NetStatus.RED
-            self.state = NetState(NetStatus.RED, 0, "Timeout")
+            if latency_ms < 200:
+                self.state = NetState(NetStatus.GREEN, latency_ms, f"{latency_ms:.0f}ms")
+            elif latency_ms < 500:
+                self.state = NetState(NetStatus.YELLOW, latency_ms, f"{latency_ms:.0f}ms")
+            else:
+                self.state = NetState(NetStatus.RED, latency_ms, f"Slow: {latency_ms:.0f}ms")
+            return True
+        except asyncio.TimeoutError:
+            self.state = NetState(NetStatus.RED, 0, "Timeout — port unreachable")
             return False
-        except (asyncio.TimeoutError, Exception):
+        except (ConnectionRefusedError, OSError) as e:
+            self.state = NetState(NetStatus.RED, 0, f"Disconnected: {e}")
+            return False
+        except Exception:
             self.state = NetState(NetStatus.RED, 0, "Disconnected")
             return False
