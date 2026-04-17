@@ -16,7 +16,7 @@ async def _run_kill(app: HermesGateApp, sid: int) -> None:
 
 def test_session_bindings_use_uppercase_k_for_kill():
     app = HermesGateApp()
-    kill_binding = next(binding for binding in app._BIND_SESSION if binding.action == "kill_session")
+    kill_binding = next(binding for binding in app.BINDINGS if binding.action == "kill_session")
     assert kill_binding.key == "K"
 
 

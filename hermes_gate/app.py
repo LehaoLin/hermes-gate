@@ -178,26 +178,10 @@ class HermesGateApp(App):
         Binding("K", "kill_session", "Kill"),
         Binding("r", "refresh", "Refresh"),
         Binding("enter", "attach_session", "Attach"),
-        Binding("escape", "back", "Back"),
-        Binding("shift+tab", "back", "Back"),
+        Binding("escape", "noop", show=False),
+        Binding("ctrl+b", "back", "Back"),
     ]
     TITLE = "⚡ Hermes Gate"
-
-    _BIND_SELECT = [
-        Binding("ctrl+q", "noop", show=False),
-        Binding("d", "delete_server", "Delete"),
-        Binding("q", "quit", "Quit"),
-    ]
-    _BIND_SESSION = [
-        Binding("ctrl+q", "noop", show=False),
-        Binding("N", "new_session", "New"),
-        Binding("K", "kill_session", "Kill"),
-        Binding("r", "refresh", "Refresh"),
-        Binding("enter", "attach_session", "Attach"),
-        Binding("escape", "back", "Back"),
-        Binding("shift+tab", "back", "Back"),
-        Binding("q", "quit", "Quit"),
-    ]
 
     def __init__(self):
         super().__init__()
@@ -435,7 +419,7 @@ class HermesGateApp(App):
 
             reset_text = {
                 "server-hint": "↑↓ Select · Enter Connect · D Delete · Q Quit",
-                "session-hint": "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Esc/Shift+Tab Back · Q Quit",
+                "session-hint": "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Ctrl+B Back · Q Quit",
             }.get(hint_id, "")
 
             def reset_hint() -> None:
@@ -460,7 +444,6 @@ class HermesGateApp(App):
         ssh_alias = ssh_alias or find_ssh_alias(user, host, port)
         self.session_mgr = SessionManager(user, host, port, ssh_alias=ssh_alias)
         self.net_monitor = NetworkMonitor(host, port)
-
         server_name = display_name({"user": user, "host": host, "port": port})
         self.mount(
             Center(
@@ -468,7 +451,7 @@ class HermesGateApp(App):
                     Label(f"⚡ {server_name} — Sessions", id="session-title"),
                     ListView(id="session-list"),
                     Label(
-                        "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Esc/Shift+Tab Back · Q Quit",
+                        "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Ctrl+B Back · Q Quit",
                         id="session-hint",
                     ),
                     id="session-box",
@@ -709,14 +692,25 @@ class HermesGateApp(App):
             return
         self._enter_viewer(s["id"])
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "delete_server":
+            return self._phase == "select"
+        if action in {"new_session", "kill_session", "refresh", "attach_session", "back"}:
+            return self._phase == "session"
+        return True
+
     def action_back(self) -> None:
-        """Shift+Tab / Esc — Go back to previous level
+        """Ctrl+B — Go back to previous level
 
         session list → server selection
         """
         # Stop network monitor (all back scenarios)
         if self.net_monitor:
-            asyncio.create_task(self.net_monitor.stop())
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.net_monitor.stop())
+            except RuntimeError:
+                asyncio.run(self.net_monitor.stop())
             self.net_monitor = None
 
         if self._phase == "session":
