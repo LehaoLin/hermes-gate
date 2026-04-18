@@ -524,6 +524,14 @@ class HermesGateApp(App):
             )
             # Only replace list after successful fetch — preserve existing on failure
             self.sessions = new_sessions
+
+            # Fetch previews for alive sessions (single SSH call)
+            alive_ids = [s["id"] for s in self.sessions if s.get("alive")]
+            if alive_ids:
+                new_previews = await loop.run_in_executor(
+                    None, self.session_mgr.fetch_previews, alive_ids
+                )
+                self._previews.update(new_previews)
             lv = self.query_one("#session-list", ListView)
             await lv.clear()
             for s in self.sessions:

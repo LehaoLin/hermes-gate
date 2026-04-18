@@ -208,7 +208,28 @@ class SessionManager:
                     msg = msg[:37] + "..."
                 return msg
         return ""
-        return ""
+
+    def fetch_previews(self, session_ids: list[int]) -> dict[int, str]:
+        """Batch-fetch previews for multiple sessions in a single SSH call."""
+        if not session_ids:
+            return {}
+        q = shlex.quote
+        script = "for s in " + " ".join(q(f"gate-{sid}") for sid in session_ids) + "; do echo -n \"$s:\"; tmux capture-pane -t \"$s\" -p -S -50 2>/dev/null | grep '● ' | tail -1 | sed 's/^[[:space:]]*●[[:space:]]*//'; done"
+        result = self._ssh_cmd(self.login_shell_command(script), timeout=15)
+        if result.returncode != 0:
+            return {}
+        previews = {}
+        for line in result.stdout.splitlines():
+            idx = line.find(":")
+            if idx > 0:
+                name = line[:idx]
+                msg = line[idx + 1:].strip()
+                if name.startswith("gate-"):
+                    sid = int(name[5:])
+                    if msg and len(msg) > 40:
+                        msg = msg[:37] + "..."
+                    previews[sid] = msg
+        return previews
 
     def create_session(self) -> dict:
         """Create session: find smallest available id → create remote tmux → save local record"""
