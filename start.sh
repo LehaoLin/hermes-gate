@@ -1,4 +1,25 @@
 #!/bin/bash
+
+show_help() {
+    cat <<'HELP'
+Usage: ./start.sh [OPTION]
+
+Start the Hermes Gate TUI.
+
+Options:
+      --help, -h     Show this help message and exit
+      --rebuild      Force rebuild the Docker image, then start
+      --update       git pull, then rebuild and start
+
+If no option is given, starts the existing container or builds on first run.
+HELP
+}
+
+if [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    show_help
+    exit 0
+fi
+
 set -e
 
 CONTAINER_NAME="hermes-gate"
