@@ -157,15 +157,17 @@ class SessionManager:
         return info
 
     def _session_previews(self, names: list[str]) -> dict[str, str]:
-        """Fetch last non-empty line from each tmux session's pane.
+        """Fetch a meaningful preview line from each tmux session's pane.
 
-        Returns {session_name: preview_text}. Uses a single SSH call with
-        a for-loop to avoid N round trips.
+        Filters out separator lines (dashes, equals, tildes) and empty lines,
+        then returns the last content line as preview text.
         """
         if not names:
             return {}
         q = shlex.quote
-        script = "for s in " + " ".join(q(n) for n in names) + "; do echo -n \"$s:\"; tmux capture-pane -t \"$s\" -p -S -20 2>/dev/null | sed '/^$/d' | tail -1; done"
+        # Filter: remove empty lines and lines that are purely separator chars
+        filter_cmd = "sed '/^$/d; /^[-=~_*+]*$/d; /^│/d' | tail -1"
+        script = "for s in " + " ".join(q(n) for n in names) + "; do echo -n \"$s:\"; tmux capture-pane -t \"$s\" -p -S -30 2>/dev/null | " + filter_cmd + "; done"
         result = self._ssh_cmd(self.login_shell_command(script), timeout=10)
         if result.returncode != 0:
             return {}
