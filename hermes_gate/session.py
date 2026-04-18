@@ -204,19 +204,41 @@ class SessionManager:
         entry["alive"] = True
         return entry
 
-    def kill_session(self, session_id: int) -> bool:
-        """Kill remote session and remove from local records"""
+    @staticmethod
+    def _tmux_session_missing(result: subprocess.CompletedProcess) -> bool:
+        stderr = (result.stderr or "").lower()
+        stdout = (result.stdout or "").lower()
+        text = f"{stdout}\n{stderr}"
+        return "can't find session" in text or "no such session" in text
+
+    def kill_session(self, session_id: int) -> dict:
+        """Detach clients, kill remote tmux session, and remove local record."""
         name = f"gate-{session_id}"
+        detach_result = self._ssh_cmd(
+            self.tmux_command("detach-client", "-s", name, suppress_stderr=True)
+        )
+        if detach_result.returncode == 127:
+            raise RuntimeError(
+                "Failed to kill remote session: tmux is not installed or is not available in the login PATH"
+            )
+
         result = self._ssh_cmd(
             self.tmux_command("kill-session", "-t", name, suppress_stderr=True)
         )
+        if result.returncode == 127:
+            raise RuntimeError(
+                "Failed to kill remote session: tmux is not installed or is not available in the login PATH"
+            )
 
-        # Remove from local regardless of remote success
+        tmux_missing = self._tmux_session_missing(result)
+        if result.returncode != 0 and not tmux_missing:
+            raise RuntimeError(result.stderr.strip() or f"Failed to kill remote session {name}")
+
         local = _load_local(self.user, self.host, self.port)
         local = [s for s in local if s["id"] != session_id]
         _save_local(self.user, self.host, self.port, local)
 
-        return result.returncode == 0
+        return {"removed": True, "tmux_missing": tmux_missing}
 
     def attach_cmd(self, session_id: int) -> list[str]:
         name = f"gate-{session_id}"

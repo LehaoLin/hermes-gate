@@ -105,6 +105,45 @@ class ConnectingScreen(ModalScreen):
             pass
 
 
+class ConfirmKillScreen(ModalScreen[bool]):
+    HINT_TEXT = "enter/y kill · Esc/n cancel"
+    TITLE_TEMPLATE = "Kill session {session_name}? [y/n]"
+    CSS = """
+    ConfirmKillScreen { align: center middle; }
+    #kill-dialog {
+        width: 60; height: auto;
+        border: thick $error; background: $surface; padding: 1 2;
+    }
+    #kill-title { text-style: bold; margin-bottom: 1; }
+    #kill-hint { color: $text-muted; margin-top: 1; }
+    """
+    BINDINGS = [
+        Binding("y", "confirm", "Confirm"),
+        Binding("n", "cancel", "Cancel"),
+        Binding("escape", "cancel", "Cancel"),
+        Binding("enter", "confirm", "Confirm"),
+    ]
+
+    def __init__(self, session_name: str):
+        super().__init__()
+        self.session_name = session_name
+        self.TITLE_TEXT = self.TITLE_TEMPLATE.format(session_name=session_name)
+
+    def compose(self) -> ComposeResult:
+        with Container(id="kill-dialog"):
+            yield Label(self.TITLE_TEXT, id="kill-title")
+            yield Label(
+                "This will detach any attached client, stop the remote Hermes session, and kill the tmux session."
+            )
+            yield Label(self.HINT_TEXT, id="kill-hint")
+
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
 # ─── Main Application ────────────────────────────────────────────
 
 
@@ -134,24 +173,15 @@ class HermesGateApp(App):
     BINDINGS = [
         Binding("ctrl+q", "noop", show=False),
         Binding("q", "quit", "Quit"),
-    ]
-    TITLE = "⚡ Hermes Gate"
-
-    _BIND_SELECT = [
-        Binding("ctrl+q", "noop", show=False),
         Binding("d", "delete_server", "Delete"),
-        Binding("q", "quit", "Quit"),
-    ]
-    _BIND_SESSION = [
-        Binding("ctrl+q", "noop", show=False),
-        Binding("n", "new_session", "New"),
-        Binding("k", "kill_session", "Kill"),
+        Binding("N", "new_session", "New"),
+        Binding("K", "kill_session", "Kill"),
         Binding("r", "refresh", "Refresh"),
         Binding("enter", "attach_session", "Attach"),
-        Binding("escape", "back", "Back"),
-        Binding("shift+tab", "back", "Back"),
-        Binding("q", "quit", "Quit"),
+        Binding("escape", "noop", show=False),
+        Binding("ctrl+b", "back", "Back"),
     ]
+    TITLE = "⚡ Hermes Gate"
 
     def __init__(self):
         super().__init__()
@@ -183,7 +213,6 @@ class HermesGateApp(App):
     def _show_server_select(self) -> None:
         self._phase = "select"
         self._clear()
-        self.BINDINGS = self._BIND_SELECT
 
         servers = load_servers()
         items = [ListItem(Label(f" 🖥️  {display_name(s)}"), name="srv") for s in servers]
@@ -223,6 +252,16 @@ class HermesGateApp(App):
 
     def action_noop(self) -> None:
         pass
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        session_actions = {"new_session", "kill_session", "refresh", "attach_session", "back"}
+        select_actions = {"delete_server"}
+
+        if action in session_actions:
+            return self._phase == "session"
+        if action in select_actions:
+            return self._phase == "select"
+        return True
 
     def action_delete_server(self) -> None:
         """D key to delete selected server (only removes from servers.json)"""
@@ -380,7 +419,7 @@ class HermesGateApp(App):
 
             reset_text = {
                 "server-hint": "↑↓ Select · Enter Connect · D Delete · Q Quit",
-                "session-hint": "↑↓ Select · Enter Attach · N New · K Kill · Shift+Tab Back",
+                "session-hint": "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Ctrl+B Back · Q Quit",
             }.get(hint_id, "")
 
             def reset_hint() -> None:
@@ -405,9 +444,6 @@ class HermesGateApp(App):
         ssh_alias = ssh_alias or find_ssh_alias(user, host, port)
         self.session_mgr = SessionManager(user, host, port, ssh_alias=ssh_alias)
         self.net_monitor = NetworkMonitor(host, port)
-
-        self.BINDINGS = self._BIND_SESSION
-
         server_name = display_name({"user": user, "host": host, "port": port})
         self.mount(
             Center(
@@ -415,7 +451,7 @@ class HermesGateApp(App):
                     Label(f"⚡ {server_name} — Sessions", id="session-title"),
                     ListView(id="session-list"),
                     Label(
-                        "↑↓ Select · Enter Attach · N New · K Kill · Shift+Tab Back",
+                        "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Ctrl+B Back · Q Quit",
                         id="session-hint",
                     ),
                     id="session-box",
@@ -502,7 +538,14 @@ class HermesGateApp(App):
         if idx is None or idx >= len(self.sessions):
             self._hint("session-hint", "Please select a session first")
             return
-        self._kill(self.sessions[idx]["id"])
+        session = self.sessions[idx]
+        name = session.get("name") or f"gate-{session['id']}"
+
+        def handle(confirm: bool) -> None:
+            if confirm:
+                self._kill(session["id"])
+
+        self.push_screen(ConfirmKillScreen(name), handle)
 
     @work(exit_on_error=False)
     async def _kill(self, sid: int) -> None:
@@ -510,13 +553,20 @@ class HermesGateApp(App):
             return
         name = f"gate-{sid}"
         loop = asyncio.get_event_loop()
-        ok = await loop.run_in_executor(None, self.session_mgr.kill_session, sid)
-        self._hint(
-            "session-hint",
-            f"Killed {name}"
-            if ok
-            else f"{name} no longer exists on remote, record removed",
-        )
+        try:
+            result = await loop.run_in_executor(None, self.session_mgr.kill_session, sid)
+        except Exception as e:
+            self._hint("session-hint", f"Failed to kill {name}: {e}")
+            return
+
+        if result.get("tmux_missing"):
+            self._hint(
+                "session-hint",
+                f"{name} tmux session already missing, local record removed",
+                error=False,
+            )
+        else:
+            self._hint("session-hint", f"Killed {name}", error=False)
         self._refresh_sessions()
 
     # ═══════════════════════════════════════════════════════════════
@@ -642,14 +692,25 @@ class HermesGateApp(App):
             return
         self._enter_viewer(s["id"])
 
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        if action == "delete_server":
+            return self._phase == "select"
+        if action in {"new_session", "kill_session", "refresh", "attach_session", "back"}:
+            return self._phase == "session"
+        return True
+
     def action_back(self) -> None:
-        """Shift+Tab / Esc — Go back to previous level
+        """Ctrl+B — Go back to previous level
 
         session list → server selection
         """
         # Stop network monitor (all back scenarios)
         if self.net_monitor:
-            asyncio.create_task(self.net_monitor.stop())
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.net_monitor.stop())
+            except RuntimeError:
+                asyncio.run(self.net_monitor.stop())
             self.net_monitor = None
 
         if self._phase == "session":
