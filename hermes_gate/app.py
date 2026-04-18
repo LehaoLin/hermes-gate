@@ -245,8 +245,8 @@ class HermesGateApp(App):
     def _clear(self) -> None:
         for wid in ("server-screen", "session-screen"):
             try:
-                widget = self.query_one(f"#{wid}")
-                widget.remove()
+                for widget in self.query(f"#{wid}"):
+                    widget.remove()
             except Exception:
                 pass
 
@@ -321,8 +321,6 @@ class HermesGateApp(App):
 
         remove_server(server["user"], server["host"], server.get("port", "22"))
         self._hint("server-hint", f"Deleted {name}")
-        # 刷新列表
-        self._clear()
         self._show_server_select()
 
     def _prompt_new_server(self) -> None:
