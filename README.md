@@ -2,7 +2,7 @@
 
 A feature-rich **terminal TUI** for remotely managing [Hermes Agent](https://github.com/NousResearch/hermes-agent) tmux sessions on cloud servers — all from a single Docker container.
 
-> **Note:** Hermes Gate is a companion tool for [Hermes Agent](https://github.com/NousResearch/hermes-agent) ([官网](https://hermes-agent.nousresearch.com/)), an open-source AI agent framework by NousResearch.
+> **Note:** Hermes Gate is a companion tool for [Hermes Agent](https://github.com/NousResearch/hermes-agent) ([Website](https://hermes-agent.nousresearch.com/)), an open-source AI agent framework by NousResearch.
 
 ## Why Hermes Gate?
 
