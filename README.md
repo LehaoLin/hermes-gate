@@ -1,4 +1,4 @@
-# Hermes Gate
+# 🏛️ Hermes Gate
 
 A feature-rich **terminal TUI** for remotely managing [Hermes](https://github.com/NomicFoundation/hermes) tmux sessions on cloud servers — all from a single Docker container, zero config.
 
