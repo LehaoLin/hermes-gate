@@ -225,6 +225,18 @@ class HermesGateApp(App):
     def on_mount(self) -> None:
         self._show_server_select()
 
+    def on_key(self, event) -> None:
+        if event.key not in ("up", "down"):
+            return
+        try:
+            lv_id = "#server-list" if self._phase == "select" else "#session-list"
+            lv = self.query_one(lv_id, ListView)
+        except Exception:
+            return
+        if not lv.has_focus:
+            lv.focus()
+            event.stop()
+
     # ═══════════════════════════════════════════════════════════════
     # Step 1: Server Selection
     # ═══════════════════════════════════════════════════════════════
