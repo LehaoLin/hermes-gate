@@ -94,7 +94,7 @@ class SessionManager:
             "-o",
             "BatchMode=yes",
             "-o",
-            "StrictHostKeyChecking=no",
+            "StrictHostKeyChecking=accept-new",
             "-o",
             f"ConnectTimeout={timeout}",
         ]

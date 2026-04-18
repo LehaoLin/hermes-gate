@@ -141,6 +141,15 @@ def test_ssh_base_args_uses_config_alias(tmp_home):
     assert "-F" in args
 
 
+def test_ssh_base_args_uses_accept_new_host_key(tmp_home):
+    """ssh_base_args must use accept-new, never no, for host key checking."""
+    mgr = SessionManager("root", "1.2.3.4", "22")
+    args = mgr.ssh_base_args()
+
+    assert "StrictHostKeyChecking=accept-new" in args
+    assert "StrictHostKeyChecking=no" not in args
+
+
 def test_ssh_base_args_uses_runtime_ssh_config_env(monkeypatch, tmp_path):
     """Alias-backed SSH should use the sanitized runtime config when provided."""
     config = tmp_path / "runtime_ssh_config"
