@@ -8,8 +8,8 @@ Start the Hermes Gate TUI.
 
 Options:
       --help, -h     Show this help message and exit
-      --rebuild      Force rebuild the Docker image, then start
-      --update       git pull, then rebuild and start
+      rebuild        Force rebuild the Docker image, then start
+      update         git pull, then rebuild and start
 
 If no option is given, starts the existing container or builds on first run.
 HELP
@@ -33,9 +33,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 FORCE_REBUILD=false
-if [ "$1" = "--rebuild" ]; then
+if [ "$1" = "rebuild" ]; then
     FORCE_REBUILD=true
-elif [ "$1" = "--update" ]; then
+elif [ "$1" = "update" ]; then
     echo "Pulling latest changes..."
     git pull
     FORCE_REBUILD=true

@@ -28,7 +28,7 @@ username@hostname:port    e.g. root@1.2.3.4:2222
 
 ```bash
 ./run.sh              # Start and enter container (skips build if already built)
-./run.sh --rebuild    # Force rebuild then start
+./run.sh rebuild      # Force rebuild then start
 ```
 
 The container stops automatically when you exit the TUI.
@@ -37,7 +37,7 @@ The container stops automatically when you exit the TUI.
 
 Python code under `hermes_gate/` is mounted via a Docker volume. After modification, **no rebuild is needed** — just restart the container.
 
-The following files **require a rebuild** (`./run.sh --rebuild`) after changes:
+The following files **require a rebuild** (`./run.sh rebuild`) after changes:
 
 - `pyproject.toml`
 - `requirements.txt`

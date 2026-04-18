@@ -51,8 +51,8 @@ The first run will automatically build the Docker image and launch the TUI. Make
 
 ```bash
 ./run.sh              # Start (skips build if already built)
-./run.sh --rebuild    # Force rebuild then start
-./run.sh --update     # git pull + rebuild + start
+./run.sh rebuild      # Force rebuild then start
+./run.sh update       # git pull + rebuild + start
 ./run.sh -h           # Show help
 ```
 
@@ -89,7 +89,7 @@ Default port is 22. Non-standard ports must be specified explicitly.
 
 The `hermes_gate/` directory is mounted as a volume into the container. After modifying Python code, **just restart the container** — no rebuild needed.
 
-The following files require a rebuild (`./run.sh --rebuild`) after changes:
+The following files require a rebuild (`./run.sh rebuild`) after changes:
 
 - `pyproject.toml` / `requirements.txt`
 - `Dockerfile` / `entrypoint.sh`
