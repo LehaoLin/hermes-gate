@@ -156,7 +156,7 @@ class HermesGateApp(App):
         align: center middle; height: 1fr;
     }
     #server-box, #session-box {
-        width: 60; height: auto; max-height: 85%;
+        width: 72; height: auto; max-height: 85%;
         border: thick $primary; background: $surface; padding: 1 2;
     }
     #server-title, #session-title {
