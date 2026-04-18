@@ -214,7 +214,7 @@ class SessionManager:
         """Create session: find smallest available id → create remote tmux → save local record"""
         local = _load_local(self.user, self.host, self.port)
 
-        remote_names = self._remote_session_names()
+        remote_names = set(self._remote_session_info())
 
         local_ids = {s["id"] for s in local}
         sid = 0

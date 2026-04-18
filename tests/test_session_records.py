@@ -150,6 +150,27 @@ def test_ssh_base_args_uses_accept_new_host_key(tmp_home):
     assert "StrictHostKeyChecking=no" not in args
 
 
+def test_create_session_uses_remote_session_info_and_picks_first_free_id(tmp_home):
+    """create_session should use the refactored remote session info helper."""
+    _save_local("root", "example.com", "22", [{"id": 0, "created": "2024-01-01T10:00"}])
+
+    mgr = SessionManager("root", "example.com", "22")
+
+    with patch.object(
+        mgr,
+        "_remote_session_info",
+        return_value={"gate-1": "1700000000", "other": "1700000001"},
+    ), patch.object(mgr, "_ssh_cmd") as mock_ssh:
+        mock_ssh.return_value.returncode = 0
+        mock_ssh.return_value.stderr = ""
+        entry = mgr.create_session()
+
+    assert entry["id"] == 2
+    assert entry["name"] == "gate-2"
+    assert entry["alive"] is True
+    assert _load_local("root", "example.com", "22")[-1]["id"] == 2
+
+
 def test_ssh_base_args_uses_runtime_ssh_config_env(monkeypatch, tmp_path):
     """Alias-backed SSH should use the sanitized runtime config when provided."""
     config = tmp_path / "runtime_ssh_config"
