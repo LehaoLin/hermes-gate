@@ -6,8 +6,8 @@ def test_app_installs_all_phase_bindings_up_front():
 
     keymap = getattr(app, "_bindings").key_to_bindings
 
-    assert "N" in keymap
-    assert "K" in keymap
+    assert "n" in keymap
+    assert "k" in keymap
     assert "d" in keymap
 
 

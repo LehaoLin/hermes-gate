@@ -174,8 +174,8 @@ class HermesGateApp(App):
         Binding("ctrl+q", "noop", show=False),
         Binding("q", "quit", "Quit"),
         Binding("d", "delete_server", "Delete"),
-        Binding("N", "new_session", "New"),
-        Binding("K", "kill_session", "Kill"),
+        Binding("n", "new_session", "New"),
+        Binding("k", "kill_session", "Kill"),
         Binding("r", "refresh", "Refresh"),
         Binding("enter", "attach_session", "Attach"),
         Binding("escape", "noop", show=False),
@@ -419,7 +419,7 @@ class HermesGateApp(App):
 
             reset_text = {
                 "server-hint": "↑↓ Select · Enter Connect · D Delete · Q Quit",
-                "session-hint": "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Ctrl+B Back · Q Quit",
+                "session-hint": "↑↓ Select · Enter Attach · n New · k Kill · r Refresh · Ctrl+B Back · q Quit",
             }.get(hint_id, "")
 
             def reset_hint() -> None:
@@ -451,7 +451,7 @@ class HermesGateApp(App):
                     Label(f"⚡ {server_name} — Sessions", id="session-title"),
                     ListView(id="session-list"),
                     Label(
-                        "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Ctrl+B Back · Q Quit",
+                        "↑↓ Select · Enter Attach · n New · k Kill · r Refresh · Ctrl+B Back · q Quit",
                         id="session-hint",
                     ),
                     id="session-box",
@@ -549,6 +549,12 @@ class HermesGateApp(App):
 
     @work(exit_on_error=False)
     async def _kill(self, sid: int) -> None:
+        """Kill session entirely in the background via SSH.
+
+        Sends 'q' to hermes inside the tmux session for graceful exit,
+        then kills the tmux session and removes the local record.
+        The user stays on the session list the whole time.
+        """
         if not self.session_mgr:
             return
         name = f"gate-{sid}"
@@ -562,11 +568,11 @@ class HermesGateApp(App):
         if result.get("tmux_missing"):
             self._hint(
                 "session-hint",
-                f"{name} tmux session already missing, local record removed",
+                f"{name} killed, local record removed",
                 error=False,
             )
         else:
-            self._hint("session-hint", f"Killed {name}", error=False)
+            self._hint("session-hint", f"{name} killed", error=False)
         self._refresh_sessions()
 
     # ═══════════════════════════════════════════════════════════════

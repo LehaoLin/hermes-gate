@@ -4,6 +4,7 @@ import json
 import re
 import shlex
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -212,8 +213,16 @@ class SessionManager:
         return "can't find session" in text or "no such session" in text
 
     def kill_session(self, session_id: int) -> dict:
-        """Detach clients, kill remote tmux session, and remove local record."""
+        """Send quit to hermes, kill remote tmux session, and remove local record."""
         name = f"gate-{session_id}"
+
+        # Send 'q' to hermes inside the tmux session for graceful exit
+        self._ssh_cmd(
+            self.tmux_command("send-keys", "-t", name, "q", suppress_stderr=True)
+        )
+        time.sleep(1)
+
+        # Detach any remaining clients, then kill the tmux session
         detach_result = self._ssh_cmd(
             self.tmux_command("detach-client", "-s", name, suppress_stderr=True)
         )

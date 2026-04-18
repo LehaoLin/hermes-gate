@@ -1,5 +1,5 @@
 """tests/test_kill_session.py"""
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -14,10 +14,10 @@ async def _run_kill(app: HermesGateApp, sid: int) -> None:
     await HermesGateApp._kill.__wrapped__(app, sid)
 
 
-def test_session_bindings_use_uppercase_k_for_kill():
+def test_session_bindings_use_lowercase_k_for_kill():
     app = HermesGateApp()
     kill_binding = next(binding for binding in app.BINDINGS if binding.action == "kill_session")
-    assert kill_binding.key == "K"
+    assert kill_binding.key == "k"
 
 
 def test_action_kill_session_opens_confirmation_dialog_instead_of_killing_immediately():
@@ -92,7 +92,7 @@ async def test_kill_updates_hint_when_tmux_session_missing_but_local_record_remo
 
     app._hint.assert_called_once_with(
         "session-hint",
-        "gate-9 tmux session already missing, local record removed",
+        "gate-9 killed, local record removed",
         error=False,
     )
     app._refresh_sessions.assert_called_once()
@@ -112,7 +112,7 @@ async def test_kill_shows_error_when_remote_cleanup_fails():
     app._refresh_sessions.assert_not_called()
 
 
-def test_session_hint_mentions_uppercase_k():
+def test_session_hint_mentions_lowercase_k():
     app = HermesGateApp()
     label = Label("initial", id="session-hint")
     app.query_one = MagicMock(return_value=label)
@@ -122,4 +122,4 @@ def test_session_hint_mentions_uppercase_k():
 
     reset = app.set_timer.call_args[0][1]
     reset()
-    assert "K Kill" in str(label.content)
+    assert "k Kill" in str(label.content)

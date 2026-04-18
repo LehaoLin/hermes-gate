@@ -21,5 +21,5 @@ def test_session_hint_text_lists_all_available_shortcuts():
     reset()
     assert (
         str(label.content)
-        == "↑↓ Select · Enter Attach · N New · K Kill · R Refresh · Ctrl+B Back · Q Quit"
+        == "↑↓ Select · Enter Attach · n New · k Kill · r Refresh · Ctrl+B Back · q Quit"
     )
