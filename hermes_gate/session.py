@@ -156,28 +156,6 @@ class SessionManager:
                 info[parts[0]] = parts[1]
         return info
 
-    def _session_previews(self, names: list[str]) -> dict[str, str]:
-        """Fetch a meaningful preview line from each tmux session's pane.
-
-        Filters out separator lines (dashes, equals, tildes) and empty lines,
-        then returns the last content line as preview text.
-        """
-        if not names:
-            return {}
-        q = shlex.quote
-        # Filter: remove empty lines and lines that are purely separator chars
-        filter_cmd = r"sed '/^$/d; /^[-=~_*+━─═]*$/d; /^│/d' | tail -1"
-        script = "for s in " + " ".join(q(n) for n in names) + "; do echo -n \"$s:\"; tmux capture-pane -t \"$s\" -p -S -30 2>/dev/null | " + filter_cmd + "; done"
-        result = self._ssh_cmd(self.login_shell_command(script), timeout=10)
-        if result.returncode != 0:
-            return {}
-        previews = {}
-        for line in result.stdout.splitlines():
-            idx = line.find(":")
-            if idx > 0:
-                previews[line[:idx]] = line[idx + 1:]
-        return previews
-
     # ─── Session Operations ────────────────────────────────────────
 
     def list_sessions(self) -> list[dict]:
@@ -186,12 +164,6 @@ class SessionManager:
 
         remote_info = self._remote_session_info()
         remote_ids = {}
-        for name, epoch in remote_info.items():
-            if (match := _GATE_SESSION_RE.match(name)):
-                remote_ids[int(match.group(1))] = epoch
-
-        alive_names = [f"gate-{sid}" for sid in remote_ids]
-        previews = self._session_previews(alive_names)
         for name, epoch in remote_info.items():
             if (match := _GATE_SESSION_RE.match(name)):
                 remote_ids[int(match.group(1))] = epoch
@@ -210,12 +182,34 @@ class SessionManager:
                     ).strftime("%Y-%m-%dT%H:%M:%S")
             entry["name"] = name
             entry["alive"] = sid in remote_ids
-            preview = previews.get(name, "")
-            if preview and len(preview) > 40:
-                preview = preview[:37] + "..."
-            entry["preview"] = preview
             result.append(entry)
         return result
+
+    def capture_session_preview(self, session_id: int) -> str:
+        """Capture the last meaningful content line from a session's tmux pane."""
+        name = f"gate-{session_id}"
+        result = self._ssh_cmd(
+            self.tmux_command("capture-pane", "-t", name, "-p", "-S", "-50"),
+            timeout=8,
+        )
+        if result.returncode != 0:
+            return ""
+        lines = result.stdout.splitlines()
+        # Walk backwards to find the first line with real content
+        for line in reversed(lines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # Skip separator lines
+            if re.match(r"^[-=~_*+━─═│┌┐└┘├┤┬┴┼]+$", stripped):
+                continue
+            # Skip prompt-only lines
+            if stripped in (">", ">", "$", "#"):
+                continue
+            if len(stripped) > 40:
+                stripped = stripped[:37] + "..."
+            return stripped
+        return ""
 
     def create_session(self) -> dict:
         """Create session: find smallest available id → create remote tmux → save local record"""

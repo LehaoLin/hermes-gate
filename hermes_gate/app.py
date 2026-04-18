@@ -217,6 +217,7 @@ class HermesGateApp(App):
         self.sessions: list[dict] = []
         self._server: dict | None = None
         self._phase = "select"  # select | session
+        self._previews: dict[int, str] = {}  # session_id -> last preview text
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -534,7 +535,7 @@ class HermesGateApp(App):
                     created = (
                         created.split("T")[0][5:] + " " + created.split("T")[1][:5]
                     )
-                preview = s.get("preview", "")
+                preview = self._previews.get(s["id"], "")
                 if preview:
                     text = f" {alive} gate-{s['id']}   ({created})\n     [dim]{preview}[/dim]"
                 else:
@@ -653,6 +654,14 @@ class HermesGateApp(App):
 
         # Restore tmux session options to defaults
         self._restore_tmux_after_detach(mgr, name)
+
+        # Capture last meaningful line as preview after detach
+        try:
+            preview = mgr.capture_session_preview(session_id)
+            if preview:
+                self._previews[session_id] = preview
+        except Exception:
+            pass
 
         # Refresh the session list (DOM was never touched, just re-query)
         self._refresh_sessions()
