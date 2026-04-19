@@ -32,6 +32,7 @@ Running Hermes Agent on a remote server usually means juggling SSH terminals, wo
 
 ### Prerequisites
 
+- [Hermes Agent](https://github.com/nousresearch/hermes-agent) installed and running on the target server
 - [Docker](https://docs.docker.com/get-docker/)
 - SSH key in `~/.ssh/` added to the target server's `authorized_keys` (any key type: `id_rsa`, `id_ed25519`, custom `IdentityFile`, or SSH agent)
 
