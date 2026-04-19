@@ -259,214 +259,38 @@ class HermesGateApp(App):
 
     def _show_server_select(self) -> None:
         self._phase = "select"
-        self._stop_auto_refresh()
         self._clear()
 
-        servers = load_servers()
-        items = [ListItem(Label(f" 🖥️  {display_name(s)}"), name="srv") for s in servers]
-        items.append(ListItem(Label(" ➕  Add Server..."), name="new-srv"))
-
+        server_entries = load_servers()
         self.mount(
             Center(
                 Vertical(
                     Label("⚡ Hermes Gate — Select Server", id="server-title"),
-                    ListView(*items, id="server-list"),
-                    Label(
-                        "↑↓ Select · Enter Connect · D Delete · Q Quit",
-                        id="server-hint",
-                    ),
+                    ListView(id="server-list"),
+                    Label("↑↓ Select · Enter Connect · d Delete · q Quit", id="server-hint"),
                     id="server-box",
                 ),
                 id="server-screen",
             )
         )
-        self.query_one("#server-list", ListView).focus()
-
-    def on_list_view_selected(self, event: ListView.Selected) -> None:
-        if self._phase == "select":
-            self._on_server_selected(event)
-        elif self._phase == "session":
-            self._on_session_selected(event)
-
-    def _on_server_selected(self, event: ListView.Selected) -> None:
-        idx = event.list_view.index
-        if idx is None:
-            return
-        servers = load_servers()
-        if idx >= len(servers):
-            self._prompt_new_server()
-        else:
-            self._connect_server(servers[idx])
-
-    def action_noop(self) -> None:
-        pass
-
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        session_actions = {"new_session", "kill_session", "refresh", "attach_session", "back"}
-        select_actions = {"delete_server"}
-
-        if action in session_actions:
-            return self._phase == "session"
-        if action in select_actions:
-            return self._phase == "select"
-        return True
-
-    def action_delete_server(self) -> None:
-        """D key to delete selected server (only removes from servers.json)"""
-        if self._phase != "select":
-            return
         lv = self.query_one("#server-list", ListView)
-        idx = lv.index
-        if idx is None:
-            return
-        servers = load_servers()
-        if idx >= len(servers):
-            return
-        server = servers[idx]
-        name = display_name(server)
+        for server in server_entries:
+            alias = find_ssh_alias(server["user"], server["host"], server.get("port", "22"))
+            name = alias or display_name(server)
+            lv.append(ListItem(Label(f" {name}"), name="srv"))
+        lv.append(ListItem(Label(" ➕  Add Server..."), name="add-srv"))
+        lv.focus()
 
-        from hermes_gate.servers import remove_server
-
-        remove_server(server["user"], server["host"], server.get("port", "22"))
-        self._hint("server-hint", f"Deleted {name}")
-        self._show_server_select()
-
-    def _prompt_new_server(self) -> None:
-        def handle(result: str | None):
-            if not result or not result.strip():
-                return
-            text = result.strip()
-
-            # Try resolving as SSH config alias (e.g. "prod-server")
-            from hermes_gate.servers import resolve_ssh_config
-
-            ssh_cfg = resolve_ssh_config(text)
-            if ssh_cfg:
-                ssh_cfg["ssh_alias"] = text
-                self._connect_server(ssh_cfg, new=True)
-                return
-
-            # Parse user@host[:port] format
-            if "@" not in text:
-                self._hint("server-hint", "Invalid format. Use user@host or SSH alias")
-                return
-            user, host_port = text.split("@", 1)
-            user = user.strip()
-            if ":" in host_port:
-                host, port = host_port.rsplit(":", 1)
-                host, port = host.strip(), port.strip()
-            else:
-                host, port = host_port.strip(), "22"
-            if not user or not host:
-                self._hint("server-hint", "Username and host cannot be empty")
-                return
-            self._connect_server({"user": user, "host": host, "port": port}, new=True)
-
-        self.push_screen(NewServerScreen(), handle)
-
-    # ─── Connect Server ────────────────────────────────────────────
-
-    def _connect_server(self, server: dict, new: bool = False) -> None:
-        user, host = server["user"], server["host"]
-        port = server.get("port", "22")
-        ssh_alias = server.get("ssh_alias") or find_ssh_alias(user, host, port)
-        if ssh_alias:
-            server = {**server, "ssh_alias": ssh_alias}
-        name = display_name(server)
-        scr = ConnectingScreen(f"🔍 Connecting to {name} ...")
-        self.push_screen(scr)
-
-        async def _do():
-            scr.update_msg(f"🔍 Testing SSH connection to {name} ...")
-            if not await self._ssh_ok(user, host, port, ssh_alias):
-                self.pop_screen()
-                self._hint(
-                    "server-hint",
-                    f"Cannot connect to {name}, check address and keys"
-                    if new
-                    else f"Cannot connect to {name}",
-                )
-                return
-            scr.update_msg(f"🔍 Checking tmux on {name} ...")
-            if not await self._remote_command_ok(
-                user, host, port, "bash -l -c 'command -v tmux >/dev/null'", ssh_alias
-            ):
-                self.pop_screen()
-                self._hint("server-hint", "Please install tmux on the server")
-                return
-            scr.update_msg(f"🔍 Checking hermes on {name} ...")
-            if not await self._hermes_ok(user, host, port, ssh_alias):
-                self.pop_screen()
-                self._hint("server-hint", "Please install hermes on the server")
-                return
-            if new:
-                add_server(user, host, port, ssh_alias=ssh_alias)
-            self._server = {**server, "ssh_alias": ssh_alias} if ssh_alias else server
-            self.pop_screen()
-            self._show_session_list(user, host, port, ssh_alias)
-
-        self.run_worker(_do(), exclusive=True)
-
-    async def _ssh_ok(
-        self, user: str, host: str, port: str = "22", ssh_alias: str | None = None
-    ) -> bool:
+    def _hint(self, label_id: str, msg: str, error: bool = True) -> None:
         try:
-            mgr = SessionManager(user, host, port, ssh_alias=ssh_alias)
-            p = await asyncio.create_subprocess_exec(
-                *mgr.ssh_base_args(timeout=8),
-                "echo",
-                "ok",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            out, _ = await asyncio.wait_for(p.communicate(), timeout=15)
-            return p.returncode == 0 and b"ok" in out
-        except Exception:
-            return False
-
-    async def _hermes_ok(
-        self, user: str, host: str, port: str = "22", ssh_alias: str | None = None
-    ) -> bool:
-        return await self._remote_command_ok(
-            user,
-            host,
-            port,
-            "bash -l -c 'command -v hermes >/dev/null && hermes --version >/dev/null'",
-            ssh_alias,
-        )
-
-    async def _remote_command_ok(
-        self,
-        user: str,
-        host: str,
-        port: str,
-        remote_command: str,
-        ssh_alias: str | None = None,
-    ) -> bool:
-        try:
-            mgr = SessionManager(user, host, port, ssh_alias=ssh_alias)
-            p = await asyncio.create_subprocess_exec(
-                *mgr.ssh_base_args(timeout=8),
-                remote_command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            out, _ = await asyncio.wait_for(p.communicate(), timeout=15)
-            return p.returncode == 0
-        except Exception:
-            return False
-
-    def _hint(self, hint_id: str, msg: str, error: bool = True) -> None:
-        try:
-            h = self.query_one(f"#{hint_id}", Label)
-            prefix = "❌" if error else "✅"
-            h.update(f"{prefix} {msg}")
+            h = self.query_one(f"#{label_id}", Label)
+            reset_text = None
+            if label_id == "server-hint":
+                reset_text = "↑↓ Select · Enter Connect · d Delete · q Quit"
+            elif label_id == "session-hint":
+                reset_text = "↑↓ Select · Enter Attach · n New · k Kill · r Refresh · Ctrl+B Back · q Quit"
+            h.update(msg)
             h.styles.color = "red" if error else "green"
-
-            reset_text = {
-                "server-hint": "↑↓ Select · Enter Connect · D Delete · Q Quit",
-                "session-hint": "↑↓ Select · Enter Attach · n New · k Kill · r Refresh · Ctrl+B Back · q Quit",
-            }.get(hint_id, "")
 
             def reset_hint() -> None:
                 if reset_text:
@@ -547,6 +371,25 @@ class HermesGateApp(App):
             self._refresh_sessions()
             self._check_completion()
 
+    def _emit_host_notification(
+        self,
+        title: str,
+        message: str,
+        sound: str = "complete.wav",
+        **extra: str,
+    ) -> None:
+        notify_dir = Path("/hermes-notify")
+        if not notify_dir.is_dir():
+            return
+        ts = datetime.now().strftime("%Y%m%d%H%M%S%f")
+        payload = {
+            "title": title,
+            "message": message,
+            "sound": sound,
+            **extra,
+        }
+        (notify_dir / f"notify-{ts}.json").write_text(json.dumps(payload))
+
     def _notify(self, session_name: str, message: str) -> None:
         """Dual-layer notification: OSC 9 (instant terminal) + file signal (host system)."""
         text = f"Hermes {session_name}: {message}"
@@ -559,16 +402,12 @@ class HermesGateApp(App):
             pass
 
         # Layer 2: Write file signal to mounted volume for host-side watcher
-        notify_dir = Path("/hermes-notify")
-        if notify_dir.is_dir():
-            ts = datetime.now().strftime("%Y%m%d%H%M%S%f")
-            (notify_dir / f"notify-{ts}.json").write_text(
-                json.dumps({
-                    "title": "Hermes Gate",
-                    "message": text,
-                    "sound": "complete.wav",
-                })
-            )
+        self._emit_host_notification(
+            "Hermes Gate",
+            text,
+            session_name=session_name,
+            response_preview=message,
+        )
 
     @work(exit_on_error=False)
     async def _check_completion(self) -> None:
@@ -583,7 +422,7 @@ class HermesGateApp(App):
             return
         for sig in signals:
             name = f"gate-{sig.get('session_id', '?')}"
-            preview = sig.get("message_preview", "task completed")
+            preview = sig.get("response_preview") or sig.get("message_preview") or "task completed"
             self._notify(name, preview)
 
     @work(exit_on_error=False)
@@ -687,26 +526,22 @@ class HermesGateApp(App):
         screen = WaitingScreen(f"Waiting for {name} to be killed...")
         self.push_screen(screen)
 
-        async def _do_kill() -> None:
-            await self._do_kill_session(sid, screen)
+        async def do_kill() -> None:
+            try:
+                loop = asyncio.get_event_loop()
+                result = await loop.run_in_executor(None, self.session_mgr.kill_session, sid)
+            except Exception as e:
+                screen.set_error(f"Kill failed: {e}")
+                return
 
-        self.run_worker(_do_kill(), exit_on_error=False)
+            self.pop_screen()
+            if result.get("tmux_missing"):
+                self._hint("session-hint", f"{name} killed, local record removed", error=False)
+            else:
+                self._hint("session-hint", f"{name} killed", error=False)
+            self._refresh_sessions()
 
-    async def _do_kill_session(self, sid: int, screen: WaitingScreen) -> None:
-        name = f"gate-{sid}"
-        loop = asyncio.get_event_loop()
-        try:
-            result = await loop.run_in_executor(None, self.session_mgr.kill_session, sid)
-        except Exception as e:
-            screen.set_error(f"Failed to kill {name}: {e}")
-            return
-
-        self.pop_screen()
-        if result.get("tmux_missing"):
-            self._hint("session-hint", f"{name} killed, local record removed", error=False)
-        else:
-            self._hint("session-hint", f"{name} killed", error=False)
-        self._refresh_sessions()
+        asyncio.create_task(do_kill())
 
     # ═══════════════════════════════════════════════════════════════
     # Step 3: Attach to Remote tmux Session
@@ -727,7 +562,11 @@ class HermesGateApp(App):
 
         # Stop network monitor before suspending
         if self.net_monitor:
-            asyncio.create_task(self.net_monitor.stop())
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.net_monitor.stop())
+            except RuntimeError:
+                asyncio.run(self.net_monitor.stop())
             self.net_monitor = None
 
         # Configure tmux: Ctrl+B → detach, green status bar at bottom
@@ -775,23 +614,18 @@ class HermesGateApp(App):
         self._bg_poll_stop = threading.Event()
 
         def _poll():
-            notify_dir = Path("/hermes-notify")
             while not self._bg_poll_stop.is_set():
                 try:
                     signals = mgr.check_completion_signals()
                     for sig in signals:
                         name = f"gate-{sig.get('session_id', '?')}"
-                        preview = sig.get("message_preview", "task completed")
-                        text = f"Hermes {name}: {preview}"
-                        if notify_dir.is_dir():
-                            ts = datetime.now().strftime("%Y%m%d%H%M%S%f")
-                            (notify_dir / f"notify-{ts}.json").write_text(
-                                json.dumps({
-                                    "title": "Hermes Gate",
-                                    "message": text,
-                                    "sound": "complete.wav",
-                                })
-                            )
+                        preview = sig.get("response_preview") or sig.get("message_preview") or "task completed"
+                        self._emit_host_notification(
+                            "Hermes Gate",
+                            f"{name}: {preview}",
+                            session_name=name,
+                            response_preview=preview,
+                        )
                 except Exception:
                     pass
                 self._bg_poll_stop.wait(3)
@@ -883,6 +717,7 @@ class HermesGateApp(App):
             f"tmux set-option -u -t {q(name)} status-right",
             f"tmux set-option -u -t {q(name)} status-right-length",
             f"tmux set-option -u -t {q(name)} status-right-style",
+            f"tmux unbind-key -T root C-b",
         ])
         remote_cmd = f"bash -l -c {q(commands)}"
 
@@ -897,32 +732,9 @@ class HermesGateApp(App):
 
     # ─── Navigation ────────────────────────────────────────────────
 
-    def action_attach_session(self) -> None:
-        """Enter key to attach session"""
-        if self._phase != "session":
-            return
-        idx = self.query_one("#session-list", ListView).index
-        if idx is None or idx >= len(self.sessions):
-            return
-        s = self.sessions[idx]
-        if not s.get("alive"):
-            self._hint("session-hint", f"{s['name']} is dead, please refresh")
-            return
-        self._enter_viewer(s["id"])
-
-    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
-        if action == "delete_server":
-            return self._phase == "select"
-        if action in {"new_session", "kill_session", "refresh", "attach_session", "back"}:
-            return self._phase == "session"
-        return True
-
     def action_back(self) -> None:
-        """Ctrl+B — Go back to previous level
-
-        session list → server selection
-        """
-        # Stop network monitor (all back scenarios)
+        if self._phase == "select":
+            return
         if self.net_monitor:
             try:
                 loop = asyncio.get_running_loop()
@@ -930,12 +742,13 @@ class HermesGateApp(App):
             except RuntimeError:
                 asyncio.run(self.net_monitor.stop())
             self.net_monitor = None
+        self._stop_auto_refresh()
+        self._show_server_select()
 
-        if self._phase == "session":
-            # Return to server selection
-            self._show_server_select()
 
-    async def on_shutdown_request(self) -> None:
-        if self.net_monitor:
-            await self.net_monitor.stop()
-        await super().on_shutdown_request()
+def main() -> None:
+    HermesGateApp().run(mouse=False)
+
+
+if __name__ == "__main__":
+    main()

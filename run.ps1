@@ -81,46 +81,104 @@ function Stop-IfIdle([string]$Name) {
 # ---------------------------------------------------------------------------
 $script:WatcherJob = $null
 
+function Get-NotificationHostCandidates {
+    $candidates = @()
+    $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($pwsh) {
+        $candidates += $pwsh.Source
+    }
+    $windowsPowerShell = Get-Command powershell -ErrorAction SilentlyContinue
+    if ($windowsPowerShell) {
+        $candidates += $windowsPowerShell.Source
+    }
+    return @($candidates | Select-Object -Unique)
+}
+
 function Start-NotifyWatcher {
     New-Item -ItemType Directory -Force -Path $NotifyDir | Out-Null
     $dir = $NotifyDir
-    $soundsDir = Join-Path $ProjectDir "sounds"
+    $notificationHosts = Get-NotificationHostCandidates
     $script:WatcherJob = Start-Job -ScriptBlock {
-        param($NotifyDir, $SoundsDir)
-        Add-Type -AssemblyName System.Windows.Forms
+        param($NotifyDir, $NotificationHosts)
+        $logPath = Join-Path $NotifyDir "watcher.log"
         while ($true) {
             Get-ChildItem -Path $NotifyDir -Filter "notify-*.json" -ErrorAction SilentlyContinue | ForEach-Object {
                 try {
                     $data = Get-Content $_.FullName -Raw | ConvertFrom-Json
-                    $msg = $data.message
-                    $title = $data.title
-                    $soundName = $data.sound
-                    # Try BurntToast module first, fall back to balloon tip
-                    if (Get-Module -ListAvailable -Name BurntToast -ErrorAction SilentlyContinue) {
-                        Import-Module BurntToast -ErrorAction SilentlyContinue
-                        New-BurntToastNotification -Text $title, $msg 2>$null | Out-Null
-                    } else {
-                        $notify = New-Object System.Windows.Forms.NotifyIcon
-                        $notify.Icon = [System.Drawing.SystemIcons]::Information
-                        $notify.Visible = $true
-                        $notify.ShowBalloonTip(5000, $title, $msg, [System.Windows.Forms.ToolTipIcon]::Info)
-                        Start-Sleep -Milliseconds 100
-                        $notify.Dispose()
-                    }
-                    # Play custom sound
-                    if ($soundName) {
-                        $soundPath = Join-Path $SoundsDir $soundName
-                        if (Test-Path $soundPath) {
-                            $player = New-Object System.Media.SoundPlayer $soundPath
-                            $player.Play()
+                    $sessionName = if ($data.session_name) { [string]$data.session_name } else { $null }
+                    $responsePreview = if ($data.response_preview) { [string]$data.response_preview } else { $null }
+                    $title = if ($sessionName) { $sessionName } elseif ($data.title) { [string]$data.title } else { "Hermes Gate" }
+                    $msg = if ($responsePreview) { $responsePreview } elseif ($data.message) { [string]$data.message } else { "Notification received." }
+
+                    # Visible notifications run in a separate PowerShell process so toast/UI
+                    # APIs execute in a normal user-session context instead of the background job.
+                    $escapedTitle = $title.Replace("'", "''")
+                    $escapedMsg = $msg.Replace("'", "''")
+                    $escapedLogPath = $logPath.Replace("'", "''")
+                    $notifyCommand = @"
+`$ErrorActionPreference = 'Stop'
+`$logPath = '$escapedLogPath'
+function Write-NotifyLog([string]`$entry) {
+    Add-Content -Path `$logPath -Value ((Get-Date -Format s) + ' ' + `$entry)
+}
+try {
+    if (-not (Get-Module -ListAvailable -Name BurntToast -ErrorAction SilentlyContinue)) {
+        throw 'BurntToast module not available'
+    }
+    Import-Module BurntToast -ErrorAction Stop
+    New-BurntToastNotification -Text '$escapedTitle', '$escapedMsg' 2>`$null | Out-Null
+    Write-NotifyLog 'Toast notification sent successfully'
+    exit 0
+}
+catch {
+    Write-NotifyLog ('Notification host failed: ' + `$_)
+    exit 1
+}
+"@
+                    $encodedNotifyCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($notifyCommand))
+
+                    $toastShown = $false
+                    foreach ($notificationHost in $NotificationHosts) {
+                        try {
+                            $process = Start-Process $notificationHost -ArgumentList @(
+                                '-NoProfile',
+                                '-WindowStyle', 'Hidden',
+                                '-EncodedCommand',
+                                $encodedNotifyCommand
+                            ) -WindowStyle Hidden -PassThru -Wait
+                            if ($process.ExitCode -eq 0) {
+                                $toastShown = $true
+                                break
+                            }
+                        }
+                        catch {
+                            Add-Content -Path $logPath -Value ((Get-Date -Format s) + ' Notification host failed: ' + $_)
                         }
                     }
-                } catch {}
+
+                    if (-not $toastShown) {
+                        Add-Content -Path $logPath -Value ((Get-Date -Format s) + ' Falling back to MessageBox')
+                        $fallbackHost = if ($NotificationHosts -and $NotificationHosts.Count -gt 0) { $NotificationHosts[0] } else { 'powershell' }
+                        $fallbackCommand = @"
+Add-Type -AssemblyName System.Windows.Forms
+[System.Windows.Forms.MessageBox]::Show('$escapedMsg', '$escapedTitle', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
+"@
+                        $encodedFallbackCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($fallbackCommand))
+                        Start-Process $fallbackHost -ArgumentList @(
+                            '-NoProfile',
+                            '-WindowStyle', 'Hidden',
+                            '-EncodedCommand',
+                            $encodedFallbackCommand
+                        ) | Out-Null
+                    }
+                } catch {
+                    Add-Content -Path $logPath -Value ((Get-Date -Format s) + ' Watcher processing failed: ' + $_)
+                }
                 Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
             }
             Start-Sleep -Seconds 2
         }
-    } -ArgumentList $dir, $soundsDir
+    } -ArgumentList $dir, $notificationHosts
 }
 
 function Stop-NotifyWatcher {
