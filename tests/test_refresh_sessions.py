@@ -81,3 +81,40 @@ def test_tmux_missing_raises_clear_error():
                 mgr.list_sessions()
 
     assert "tmux is not installed" in str(exc_info.value)
+
+
+def test_fetch_previews_skips_non_numeric_gate_names_instead_of_crashing():
+    """Malformed gate-* output lines must be ignored without failing the batch."""
+    mgr = SessionManager("root", "example.com", "22")
+
+    preview_result = MagicMock()
+    preview_result.returncode = 0
+    preview_result.stdout = (
+        "gate-0\tignored because no colon\n"
+        "gate-0:first preview\n"
+        "gate-x:bad name\n"
+        "gate-12:second preview\n"
+        "gate-bak:also bad\n"
+        "junk line\n"
+    )
+    preview_result.stderr = ""
+
+    with patch.object(mgr, "_ssh_cmd", return_value=preview_result):
+        previews = mgr.fetch_previews([0, 12])
+
+    assert previews == {0: "first preview", 12: "second preview"}
+
+
+def test_fetch_previews_preserves_empty_preview_for_valid_session_names():
+    """Valid gate-N names with no extracted message should remain parseable."""
+    mgr = SessionManager("root", "example.com", "22")
+
+    preview_result = MagicMock()
+    preview_result.returncode = 0
+    preview_result.stdout = "gate-0:first\ngate-1:\n"
+    preview_result.stderr = ""
+
+    with patch.object(mgr, "_ssh_cmd", return_value=preview_result):
+        previews = mgr.fetch_previews([0, 1])
+
+    assert previews == {0: "first", 1: ""}

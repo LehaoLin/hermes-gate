@@ -221,14 +221,20 @@ class SessionManager:
         previews = {}
         for line in result.stdout.splitlines():
             idx = line.find(":")
-            if idx > 0:
-                name = line[:idx]
-                msg = line[idx + 1:].strip()
-                if name.startswith("gate-"):
-                    sid = int(name[5:])
-                    if msg and len(msg) > 40:
-                        msg = msg[:37] + "..."
-                    previews[sid] = msg
+            if idx <= 0:
+                continue
+
+            name = line[:idx]
+            msg = line[idx + 1:].strip()
+
+            match = _GATE_SESSION_RE.match(name)
+            if not match:
+                continue
+
+            sid = int(match.group(1))
+            if msg and len(msg) > 40:
+                msg = msg[:37] + "..."
+            previews[sid] = msg
         return previews
 
     def create_session(self) -> dict:
