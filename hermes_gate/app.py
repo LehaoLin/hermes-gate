@@ -720,6 +720,12 @@ class HermesGateApp(App):
             f"tmux set-option -t {q(name)} prefix C-a",
             # Bind C-b in root table to detach directly
             f"tmux bind-key -T root C-b detach-client",
+            # Enable mouse support and make wheel scroll pane history when not already handling mouse events.
+            f"tmux set-option -t {q(name)} mouse on",
+            f"tmux bind-key -T root WheelUpPane if-shell -F '#{{mouse_any_flag}}' 'send-keys -M' 'copy-mode -e'",
+            f"tmux bind-key -T root WheelDownPane if-shell -F '#{{mouse_any_flag}}' 'send-keys -M' 'send-keys -X scroll-down'",
+            f"tmux bind-key -T copy-mode-vi WheelUpPane send-keys -X scroll-up",
+            f"tmux bind-key -T copy-mode-vi WheelDownPane send-keys -X scroll-down",
             # Status bar: green connection indicator at the bottom
             f"tmux set-option -t {q(name)} status on",
             f"tmux set-option -t {q(name)} status-position bottom",
@@ -761,6 +767,11 @@ class HermesGateApp(App):
             pass
         commands = " && ".join([
             f"tmux set-option -t {q(name)} prefix C-b",
+            f"tmux set-option -u -t {q(name)} mouse",
+            f"tmux unbind-key -T root WheelUpPane",
+            f"tmux unbind-key -T root WheelDownPane",
+            f"tmux unbind-key -T copy-mode-vi WheelUpPane",
+            f"tmux unbind-key -T copy-mode-vi WheelDownPane",
             f"tmux set-option -u -t {q(name)} status-style",
             f"tmux set-option -u -t {q(name)} status-left",
             f"tmux set-option -u -t {q(name)} status-left-length",
