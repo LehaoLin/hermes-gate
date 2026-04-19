@@ -30,8 +30,8 @@ CONTAINER_NAME="hermes-gate"
 
 # ─── auto-stop if no other sessions ───────────────────────────────
 _auto_stop() {
-    REMAINING=$(docker exec "${CONTAINER_NAME}" pgrep -c python 2>/dev/null || echo "0")
-    if [ "$REMAINING" -eq 0 ] 2>/dev/null; then
+    REMAINING=$(docker exec "${CONTAINER_NAME}" pgrep -c python 2>/dev/null || true)
+    if [ "${REMAINING:-0}" -eq 0 ] 2>/dev/null; then
         echo "No active sessions, stopping container..."
         docker stop "${CONTAINER_NAME}" 2>/dev/null || true
     fi
@@ -60,7 +60,7 @@ if [ "$FORCE_REBUILD" = true ]; then
     docker compose down --rmi local 2>/dev/null || true
     docker compose up -d --build
     echo "Build complete, launching TUI..."
-    docker exec -it "${CONTAINER_NAME}" python -m hermes_gate
+    docker exec -it "${CONTAINER_NAME}" python -m hermes_gate || true
     _auto_stop
     exit 0
 fi
@@ -88,5 +88,5 @@ if [ "$RUNNING" != "true" ]; then
 fi
 
 # ─── launch TUI ───────────────────────────────────────────────────
-docker exec -it "${CONTAINER_NAME}" python -m hermes_gate
+docker exec -it "${CONTAINER_NAME}" python -m hermes_gate || true
 _auto_stop
