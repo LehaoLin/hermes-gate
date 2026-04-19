@@ -57,7 +57,7 @@ docker exec -it hermes-gate bash # Enter container shell
 
 ## Notes
 
-- Make sure you have SSH keys (`id_rsa` or `id_ed25519`) in your local `~/.ssh` directory before starting
+- Make sure you have SSH keys in your local `~/.ssh` directory before starting (any key type: `id_rsa`, `id_ed25519`, custom `IdentityFile`, or SSH agent)
 - The container stops automatically when you exit the TUI; just run `./run.sh` again next time
 - Attached interaction is primarily native tmux / Hermes behavior rather than a persistent Gate-controlled viewer layer
 - Current remote session checks and launch flow assume bash-based login-shell behavior on the target host
