@@ -1,0 +1,11 @@
+services:
+  hermes-gate:
+    image: hermes-gate
+    build: .
+    container_name: hermes-gate
+    volumes:
+      - ~/.ssh:/host/.ssh:ro
+      - ./hermes_gate:/app/hermes_gate
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
