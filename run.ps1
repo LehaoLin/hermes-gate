@@ -7,11 +7,12 @@
     .\run.ps1
     .\run.ps1 rebuild
     .\run.ps1 update
+    .\run.ps1 stop
 #>
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet("rebuild", "update")]
+    [ValidateSet("rebuild", "update", "stop")]
     [string]$Command
 )
 
@@ -19,14 +20,18 @@ $ErrorActionPreference = "Stop"
 $ContainerName = "hermes-gate"
 $ProjectDir = $PSScriptRoot
 
+function Write-Utf8NoBomFile([string]$Path, [string]$Content) {
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}
+
 # ---------------------------------------------------------------------------
 # Docker Compose on Windows cannot mount /etc/hosts (Linux/macOS only).
-# We generate a standalone compose file that skips that mount.
+# Generate a Windows-specific compose file deterministically on each run.
 # ---------------------------------------------------------------------------
 function Get-ComposeFile {
     $winCompose = Join-Path $ProjectDir "docker-compose.win.yml"
-    if (-not (Test-Path $winCompose)) {
-        @"
+    $composeContent = @"
 services:
   hermes-gate:
     build: .
@@ -37,26 +42,72 @@ services:
     stdin_open: true
     tty: true
     restart: unless-stopped
-"@ | Set-Content -Path $winCompose -Encoding UTF8NoBOM
-        Write-Host "Created docker-compose.win.yml for Windows."
-    }
+"@
+    Write-Utf8NoBomFile -Path $winCompose -Content $composeContent
     return $winCompose
 }
 
-# ---------------------------------------------------------------------------
-# Attach to container with cleanup on Ctrl+C
-# ---------------------------------------------------------------------------
-function Attach-Container([string]$Name) {
-    Write-Host ""
-    Write-Host "Attaching to $Name... (Press Ctrl+C to detach)"
-    Write-Host ""
-    try {
-        docker attach $Name
-    } finally {
-        Write-Host ""
-        Write-Host "Stopping container $Name..."
+function Assert-Command([string]$Name, [string]$Message) {
+    if (-not (Get-Command $Name -ErrorAction SilentlyContinue)) {
+        Write-Host $Message -ForegroundColor Red
+        exit 1
+    }
+}
+
+function Assert-DockerCompose {
+    docker compose version *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: 'docker compose' is not available. Please install/update Docker Desktop." -ForegroundColor Red
+        exit 1
+    }
+}
+
+function Assert-DockerDaemon {
+    docker info *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Error: Docker daemon is not running. Please start Docker Desktop." -ForegroundColor Red
+        exit 1
+    }
+}
+
+function Assert-SshDirectory {
+    $sshDir = Join-Path $HOME ".ssh"
+    if (-not (Test-Path $sshDir)) {
+        Write-Host "Warning: $sshDir was not found. SSH connections may fail until your SSH keys are available." -ForegroundColor Yellow
+    }
+}
+
+function Test-ContainerExists([string]$Name) {
+    docker inspect -f '{{.Id}}' $Name 2>$null | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
+
+function Invoke-Tui([string]$Name) {
+    docker exec -it $Name python -m hermes_gate
+}
+
+function Stop-IfIdle([string]$Name) {
+    $remaining = docker exec $Name sh -lc "pgrep -fc 'python -m hermes_gate'" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $remaining = "0"
+    }
+    $remaining = ($remaining | Out-String).Trim()
+    if (-not $remaining) {
+        $remaining = "0"
+    }
+    if ([int]$remaining -eq 0) {
+        Write-Host "No active sessions, stopping container..."
         docker stop $Name 2>$null | Out-Null
-        Write-Host "Stopped."
+    }
+}
+
+function Launch-Tui([string]$Name) {
+    Write-Host "Launching TUI..."
+    try {
+        Invoke-Tui $Name
+    }
+    finally {
+        Stop-IfIdle $Name
     }
 }
 
@@ -65,13 +116,27 @@ function Attach-Container([string]$Name) {
 # ---------------------------------------------------------------------------
 Set-Location $ProjectDir
 
-if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    Write-Host "Error: Docker not found. Please install Docker Desktop for Windows." -ForegroundColor Red
-    exit 1
+Assert-Command -Name docker -Message "Error: Docker not found. Please install Docker Desktop for Windows."
+Assert-DockerCompose
+Assert-DockerDaemon
+Assert-SshDirectory
+
+if ($Command -eq "update") {
+    Assert-Command -Name git -Message "Error: git not found. Please install Git before using '.\run.ps1 update'."
 }
 
 $ComposeFile = Get-ComposeFile
 $ComposeArgs = @("-f", $ComposeFile)
+
+if ($Command -eq "stop") {
+    Write-Host "Stopping $ContainerName..."
+    docker compose @ComposeArgs down 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        docker stop $ContainerName 2>$null | Out-Null
+    }
+    Write-Host "Stopped."
+    exit 0
+}
 
 # --- update ---
 if ($Command -eq "update") {
@@ -83,28 +148,26 @@ if ($Command -eq "update") {
 # --- rebuild ---
 if ($Command -eq "rebuild") {
     Write-Host "Force rebuilding..."
-    docker compose @ComposeArgs down 2>$null
+    docker compose @ComposeArgs down 2>$null | Out-Null
     docker compose @ComposeArgs up -d --build
-    Write-Host "Build complete, attaching..."
-    Attach-Container $ContainerName
+    Write-Host "Build complete."
+    Launch-Tui $ContainerName
     exit 0
 }
 
 # --- default: smart start ---
-
 $running = docker inspect -f '{{.State.Running}}' $ContainerName 2>$null
 if ($running -eq "true") {
-    Write-Host "Container already running, attaching..."
-    Attach-Container $ContainerName
+    Write-Host "Container already running."
+    Launch-Tui $ContainerName
     exit 0
 }
 
-$exists = docker inspect -f '{{.Id}}' $ContainerName 2>$null
-if ($exists) {
+if (Test-ContainerExists $ContainerName) {
     Write-Host "Container exists (stopped), starting..."
     docker start $ContainerName | Out-Null
-    Write-Host "Started, attaching..."
-    Attach-Container $ContainerName
+    Write-Host "Started."
+    Launch-Tui $ContainerName
     exit 0
 }
 
@@ -112,12 +175,12 @@ $hasImage = docker images --format "{{.Repository}}:{{.Tag}}" | Where-Object { $
 if ($hasImage) {
     Write-Host "Image found, starting container (skip build)..."
     docker compose @ComposeArgs up -d
-    Write-Host "Started, attaching..."
-    Attach-Container $ContainerName
+    Write-Host "Started."
+    Launch-Tui $ContainerName
     exit 0
 }
 
 Write-Host "No image found, building for the first time..."
 docker compose @ComposeArgs up -d --build
-Write-Host "Build complete, attaching..."
-Attach-Container $ContainerName
+Write-Host "Build complete."
+Launch-Tui $ContainerName

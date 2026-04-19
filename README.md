@@ -81,6 +81,7 @@ Multiple terminals can run `./run.sh` simultaneously — each gets an independen
 .\run.ps1              # Start (skips build if already built)
 .\run.ps1 rebuild      # Force rebuild then start
 .\run.ps1 update       # git pull + rebuild + start
+.\run.ps1 stop         # Stop and remove the container
 ```
 
 ### TUI Controls

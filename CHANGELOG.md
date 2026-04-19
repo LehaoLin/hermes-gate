@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-04-19 - Windows launcher parity and PowerShell 5.1 compatibility
+
+### Fixed
+
+- Reworked `run.ps1` to launch Hermes Gate via `docker exec -it ... python -m hermes_gate` instead of `docker attach`, aligning Windows startup with the current `run.sh` / `entrypoint.sh` lifecycle.
+- Added Windows `stop` command support and replaced unconditional container shutdown with idle-only auto-stop behavior so multiple local TUI sessions can coexist without one exit killing the shared container.
+- Regenerate `docker-compose.win.yml` deterministically on each run to avoid silent drift from current compose settings.
+- Added preflight checks for `docker compose`, Docker daemon availability, `git` on `update`, and missing `~/.ssh` warnings.
+- Replaced `Set-Content -Encoding UTF8NoBOM` with .NET UTF-8 no-BOM file writing so the script remains compatible with Windows PowerShell 5.1.
+
+### Tests
+
+- Added `tests/test_run_ps1.py` to lock Windows launcher behavior: `docker exec` launch path, `stop` command support, PowerShell 5.1-safe compose writing, and README command parity.
+- Validation run: `python -m pytest -q tests/test_run_ps1.py` (`4 passed`).
+- Validation run: `python -m pytest -q` (`71 passed`).
+- Validation run: `python -m compileall -q hermes_gate tests`.
+
+# Changelog
+
 ## 2026-04-17 - Compatibility and Stability Fixes
 
 ### Compatibility Review
