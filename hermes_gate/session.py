@@ -216,7 +216,16 @@ class SessionManager:
         if not session_ids:
             return {}
         q = shlex.quote
-        script = "for s in " + " ".join(q(f"gate-{sid}") for sid in session_ids) + "; do echo -n \"$s:\"; tmux capture-pane -t \"$s\" -p -S -50 2>/dev/null | grep '● ' | tail -1 | sed 's/^[[:space:]]*●[[:space:]]*//'; done"
+        parts = [q(f"gate-{sid}") for sid in session_ids]
+        script = (
+            "for s in " + " ".join(parts) + "; do "
+            "msg=$(tmux capture-pane -t \"$s\" -p -S -50 2>/dev/null"
+            " | { grep '● ' || true; }"
+            " | tail -1"
+            " | sed 's/^[[:space:]]*●[[:space:]]*//'); "
+            "echo \"$s:$msg\"; "
+            "done"
+        )
         result = self._ssh_cmd(self.login_shell_command(script), timeout=15)
         if result.returncode != 0:
             return {}
