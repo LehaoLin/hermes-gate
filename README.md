@@ -1,5 +1,7 @@
 # 🏛️ Hermes Gate
 
+[English](README.md) | [简体中文](README_ZH.md)
+
 A feature-rich **terminal TUI** for remotely managing [Hermes Agent](https://github.com/NousResearch/hermes-agent) tmux sessions on cloud servers — all from a single Docker container.
 
 > *"I love watching Hermes Agent work through a TUI — but mine runs on a remote cloud server, and my local network isn't always stable. When the connection drops mid-task, I have no idea if it's still running or already dead. An interrupted task means hours of wasted effort. Sure, I could manage it over raw tmux — but that's just typing the same boilerplate commands over and over. More time lost."*
@@ -32,6 +34,7 @@ Running Hermes Agent on a remote server usually means juggling SSH terminals, wo
 
 ### Prerequisites
 
+- [Hermes Agent](https://github.com/nousresearch/hermes-agent) installed and running on the target server
 - [Docker](https://docs.docker.com/get-docker/)
 - SSH key in `~/.ssh/` added to the target server's `authorized_keys` (any key type: `id_rsa`, `id_ed25519`, custom `IdentityFile`, or SSH agent)
 
@@ -124,7 +127,13 @@ hermes-gate/
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=LehaoLin/hermes-gate&type=Date)](https://star-history.com/#LehaoLin/hermes-gate&Date)
+<a href="https://www.star-history.com/?repos=LehaoLin%2Fhermes-gate&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=LehaoLin/hermes-gate&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=LehaoLin/hermes-gate&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=LehaoLin/hermes-gate&type=date&legend=top-left" />
+ </picture>
+</a>
 
 ## License
 
