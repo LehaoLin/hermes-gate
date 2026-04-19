@@ -1,5 +1,7 @@
 # 🏛️ Hermes Gate
 
+[简体中文](README_ZH.md) | [English](README.md)
+
 A feature-rich **terminal TUI** for remotely managing [Hermes Agent](https://github.com/NousResearch/hermes-agent) tmux sessions on cloud servers — all from a single Docker container.
 
 > *"I love watching Hermes Agent work through a TUI — but mine runs on a remote cloud server, and my local network isn't always stable. When the connection drops mid-task, I have no idea if it's still running or already dead. An interrupted task means hours of wasted effort. Sure, I could manage it over raw tmux — but that's just typing the same boilerplate commands over and over. More time lost."*
