@@ -716,11 +716,24 @@ class HermesGateApp(App):
             pass  # Best effort — don't block attach if config fails
 
     def _restore_tmux_after_detach(self, mgr: SessionManager, name: str) -> None:
-        """Restore tmux session options to defaults after detach."""
+        """Restore tmux session options to defaults after detach.
+
+        Skips restore if other clients are still attached to the session.
+        """
         q = shlex.quote
+        # Check if other clients are still attached
+        try:
+            result = subprocess.run(
+                [*mgr.ssh_base_args(timeout=5),
+                 mgr.login_shell_command(f"tmux list-clients -t {q(name)} 2>/dev/null | wc -l")],
+                capture_output=True, text=True, timeout=10,
+            )
+            if result.returncode == 0 and int(result.stdout.strip()) > 0:
+                return
+        except Exception:
+            pass
         commands = " && ".join([
             f"tmux set-option -t {q(name)} prefix C-b",
-            f"tmux unbind-key -T root C-b",
             f"tmux set-option -u -t {q(name)} status-style",
             f"tmux set-option -u -t {q(name)} status-left",
             f"tmux set-option -u -t {q(name)} status-left-length",

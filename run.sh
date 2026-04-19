@@ -2,16 +2,20 @@
 
 show_help() {
     cat <<'HELP'
-Usage: ./run.sh [OPTION]
+Usage: ./run.sh [COMMAND]
 
 Start the Hermes Gate TUI.
 
-Options:
-      --help, -h     Show this help message and exit
+Commands:
+      (none)         Start (or connect to existing container)
       rebuild        Force rebuild the Docker image, then start
       update         git pull, then rebuild and start
+      stop           Stop and remove the container
+      --help, -h     Show this help message and exit
 
-If no option is given, starts the existing container or builds on first run.
+Multiple terminals can run ./run.sh simultaneously — each gets an
+independent TUI session inside the same container. The container
+auto-stops when the last session exits.
 HELP
 }
 
@@ -24,14 +28,24 @@ set -e
 
 CONTAINER_NAME="hermes-gate"
 
-cleanup() {
-    echo ""
-    echo "Stopping container ${CONTAINER_NAME}..."
-    docker stop "${CONTAINER_NAME}" 2>/dev/null || true
-    echo "Stopped."
+# ─── auto-stop if no other sessions ───────────────────────────────
+_auto_stop() {
+    REMAINING=$(docker exec "${CONTAINER_NAME}" pgrep -c python 2>/dev/null || echo "0")
+    if [ "$REMAINING" -eq 0 ] 2>/dev/null; then
+        echo "No active sessions, stopping container..."
+        docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+    fi
 }
-trap cleanup EXIT INT TERM
 
+# ─── stop subcommand ──────────────────────────────────────────────
+if [ "$1" = "stop" ]; then
+    echo "Stopping ${CONTAINER_NAME}..."
+    docker compose down 2>/dev/null || docker stop "${CONTAINER_NAME}" 2>/dev/null || true
+    echo "Stopped."
+    exit 0
+fi
+
+# ─── rebuild / update ─────────────────────────────────────────────
 FORCE_REBUILD=false
 if [ "$1" = "rebuild" ]; then
     FORCE_REBUILD=true
@@ -45,40 +59,34 @@ if [ "$FORCE_REBUILD" = true ]; then
     echo "Force rebuilding..."
     docker compose down 2>/dev/null || true
     docker compose up -d --build
-    echo "Build complete, attaching..."
-    docker attach "${CONTAINER_NAME}"
+    echo "Build complete, launching TUI..."
+    docker exec -it "${CONTAINER_NAME}" python -m hermes_gate
+    _auto_stop
     exit 0
 fi
 
+# ─── ensure container is running ──────────────────────────────────
 RUNNING=$(docker inspect -f '{{.State.Running}}' "${CONTAINER_NAME}" 2>/dev/null || echo "false")
 
-if [ "$RUNNING" = "true" ]; then
-    echo "Container already running, attaching..."
-    docker attach "${CONTAINER_NAME}"
-    exit 0
+if [ "$RUNNING" != "true" ]; then
+    EXISTS=$(docker inspect -f '{{.Id}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")
+
+    if [ -n "$EXISTS" ]; then
+        echo "Container exists (stopped), starting..."
+        docker start "${CONTAINER_NAME}"
+    else
+        HAS_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -i "hermes" || true)
+        if [ -n "$HAS_IMAGE" ]; then
+            echo "Image found, starting container..."
+            docker compose up -d
+        else
+            echo "No image found, building for the first time..."
+            docker compose up -d --build
+        fi
+    fi
+    echo "Container started, launching TUI..."
 fi
 
-EXISTS=$(docker inspect -f '{{.Id}}' "${CONTAINER_NAME}" 2>/dev/null || echo "")
-
-if [ -n "$EXISTS" ]; then
-    echo "Container exists (stopped), starting..."
-    docker start "${CONTAINER_NAME}"
-    echo "Started, attaching..."
-    docker attach "${CONTAINER_NAME}"
-    exit 0
-fi
-
-HAS_IMAGE=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -i "hermes" || true)
-
-if [ -n "$HAS_IMAGE" ]; then
-    echo "Image found, starting container (skip build)..."
-    docker compose up -d
-    echo "Started, attaching..."
-    docker attach "${CONTAINER_NAME}"
-    exit 0
-fi
-
-echo "No image found, building for the first time..."
-docker compose up -d --build
-echo "Build complete, attaching..."
-docker attach "${CONTAINER_NAME}"
+# ─── launch TUI ───────────────────────────────────────────────────
+docker exec -it "${CONTAINER_NAME}" python -m hermes_gate
+_auto_stop

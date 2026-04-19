@@ -32,9 +32,10 @@ username@hostname:port    e.g. root@1.2.3.4:2222
 ```bash
 ./run.sh              # Start and enter container (skips build if already built)
 ./run.sh rebuild      # Force rebuild then start
+./run.sh stop         # Stop and remove the container
 ```
 
-The container stops automatically when you exit the TUI. When you attach to a session, Hermes Gate suspends its own TUI and hands control to the native remote tmux / Hermes session until you detach or exit.
+Multiple terminals can run `./run.sh` simultaneously — each gets an independent TUI session. The container auto-stops when the last session exits.
 
 ## Hot Reload
 

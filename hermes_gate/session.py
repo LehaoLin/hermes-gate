@@ -61,7 +61,9 @@ def _load_local(user: str, host: str, port: str = "22") -> list[dict]:
 
 def _save_local(user: str, host: str, port: str, sessions: list[dict]) -> None:
     f = _sessions_file(user, host, port)
-    f.write_text(json.dumps(sessions, indent=2, ensure_ascii=False))
+    tmp = f.with_suffix(".tmp")
+    tmp.write_text(json.dumps(sessions, indent=2, ensure_ascii=False))
+    tmp.replace(f)
 
 
 def _next_id(sessions: list[dict]) -> int:

@@ -31,4 +31,4 @@ if [ -f "$RUNTIME_SSH_DIR/config" ]; then
     export HERMES_GATE_SSH_CONFIG="$RUNTIME_SSH_DIR/config"
 fi
 
-exec python -m hermes_gate "$@"
+exec sleep infinity

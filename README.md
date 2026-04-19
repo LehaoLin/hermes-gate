@@ -53,8 +53,11 @@ The first run will automatically build the Docker image and launch the TUI. Make
 ./run.sh              # Start (skips build if already built)
 ./run.sh rebuild      # Force rebuild then start
 ./run.sh update       # git pull + rebuild + start
+./run.sh stop         # Stop and remove the container
 ./run.sh -h           # Show help
 ```
+
+Multiple terminals can run `./run.sh` simultaneously — each gets an independent TUI session. The container auto-stops when the last session exits.
 
 ### TUI Controls
 
