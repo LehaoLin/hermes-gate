@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-04-19 - Attach mouse-wheel scroll fix
+
+### Fixed
+
+- Added attach-scoped tmux mouse-wheel bindings so scrolling inside a Hermes session attached via Hermes Gate enters tmux copy-mode / pane scrollback instead of falling through as Hermes history navigation.
+- Restored the attach-time mouse / wheel bindings on detach alongside the existing temporary `Ctrl+B` / status-bar tmux overrides, preserving the current thin-client-style best-effort cleanup model.
+
+### Tests
+
+- Added `tests/test_attach_mouse_scroll.py` to lock attach-time tmux mouse configuration and detach-time cleanup behavior.
+- Validation run: `python -m pytest -q tests/test_attach_mouse_scroll.py` (`2 passed`).
+- Validation run: `python -m pytest -q` (`73 passed`).
+- Validation run: `python -m compileall -q hermes_gate tests`.
+
 ## 2026-04-19 - Windows launcher parity and PowerShell 5.1 compatibility
 
 ### Fixed
