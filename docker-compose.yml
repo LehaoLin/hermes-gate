@@ -1,5 +1,6 @@
 services:
   hermes-gate:
+    image: hermes-gate
     build: .
     container_name: hermes-gate
     volumes:
