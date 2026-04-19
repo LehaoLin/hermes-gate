@@ -6,7 +6,7 @@ from hermes_gate.app import HermesGateApp
 
 def main():
     app = HermesGateApp()
-    app.run()
+    app.run(mouse=False)
 
 
 if __name__ == "__main__":
