@@ -218,6 +218,7 @@ class HermesGateApp(App):
         self._server: dict | None = None
         self._phase = "select"  # select | session
         self._previews: dict[int, str] = {}  # session_id -> last preview text
+        self._auto_refresh_timer = None
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -252,6 +253,7 @@ class HermesGateApp(App):
 
     def _show_server_select(self) -> None:
         self._phase = "select"
+        self._stop_auto_refresh()
         self._clear()
 
         servers = load_servers()
@@ -498,6 +500,7 @@ class HermesGateApp(App):
             )
         )
         self._refresh_sessions()
+        self._start_auto_refresh()
         self.query_one("#session-list", ListView).focus()
 
     def _on_session_selected(self, event: ListView.Selected) -> None:
@@ -512,6 +515,19 @@ class HermesGateApp(App):
                 self._hint("session-hint", f"{s['name']} is dead, please refresh")
                 return
             self._enter_viewer(s["id"])
+
+    def _start_auto_refresh(self) -> None:
+        self._stop_auto_refresh()
+        self._auto_refresh_timer = self.set_interval(10, self._auto_refresh_tick)
+
+    def _stop_auto_refresh(self) -> None:
+        if self._auto_refresh_timer is not None:
+            self._auto_refresh_timer.stop()
+            self._auto_refresh_timer = None
+
+    def _auto_refresh_tick(self) -> None:
+        if self._phase == "session":
+            self._refresh_sessions()
 
     @work(exit_on_error=False)
     async def _refresh_sessions(self) -> None:
@@ -533,6 +549,10 @@ class HermesGateApp(App):
                 )
                 self._previews.update(new_previews)
             lv = self.query_one("#session-list", ListView)
+
+            saved_index = lv.index or 0
+            had_focus = lv.has_focus
+
             await lv.clear()
             for s in self.sessions:
                 alive = "🟢" if s.get("alive") else "⚪"
@@ -550,7 +570,14 @@ class HermesGateApp(App):
                     ListItem(Label(Text.from_markup(text)), name="sess")
                 )
             await lv.append(ListItem(Label(" ➕  New Session..."), name="new-sess"))
-            lv.focus()
+
+            if self.sessions:
+                lv.index = min(saved_index, len(self.sessions) - 1)
+            else:
+                lv.index = 0
+
+            if had_focus:
+                lv.focus()
         except (TimeoutError, ConnectionError, RuntimeError) as e:
             self._hint("session-hint", f"Refresh failed: {e}")
         except Exception as e:
