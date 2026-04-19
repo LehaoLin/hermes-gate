@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-04-19 - Windows launcher full run.sh parity
+
+### Fixed
+
+- Reworked `run.ps1` to follow the same control flow as `run.sh`: `stop`, `update -> rebuild`, `rebuild`, smart container/image detection, `docker exec -it ... python -m hermes_gate`, and idle-only auto-stop.
+- Removed runtime generation of `docker-compose.win.yml`; Windows startup now uses a checked-in `docker-compose.windows.yml` so the script no longer owns compose templating or PowerShell-specific UTF-8 file writing.
+- Matched `run.sh` rebuild semantics by using `docker compose down --rmi local` before `up -d --build` on Windows.
+- Added a checked-in Windows compose file that keeps the shared SSH/code mounts while omitting the Linux-only `/etc/hosts` bind.
+
+### Tests
+
+- Expanded `tests/test_run_ps1.py` to lock checked-in Windows compose usage, rebuild parity with `run.sh`, and the Windows compose mount contract.
+- Validation run: `python -m pytest -q tests/test_run_ps1.py` (`7 passed`).
+- Validation run: `python -m pytest -q` (`76 passed`).
+- Validation run: `python -m compileall -q hermes_gate tests`.
+- Validation run: `docker compose -f docker-compose.windows.yml config`.
+
 ## 2026-04-19 - Windows launcher parity and PowerShell 5.1 compatibility
 
 ### Fixed
