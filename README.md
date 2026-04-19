@@ -1,6 +1,6 @@
 # 🏛️ Hermes Gate
 
-[简体中文](README_ZH.md) | [English](README.md)
+[English](README.md) | [简体中文](README_ZH.md)
 
 A feature-rich **terminal TUI** for remotely managing [Hermes Agent](https://github.com/NousResearch/hermes-agent) tmux sessions on cloud servers — all from a single Docker container.
 
