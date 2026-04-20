@@ -98,9 +98,14 @@ function Start-NotifyWatcher {
     New-Item -ItemType Directory -Force -Path $NotifyDir | Out-Null
     $dir = $NotifyDir
     $notificationHosts = Get-NotificationHostCandidates
+    $soundsDir = Join-Path $ProjectDir "sounds"
     $script:WatcherJob = Start-Job -ScriptBlock {
-        param($NotifyDir, $NotificationHosts)
+        param($NotifyDir, $NotificationHosts, $SoundsDir)
         $logPath = Join-Path $NotifyDir "watcher.log"
+        # Truncate log on startup to prevent unbounded growth
+        if (Test-Path $logPath) {
+            try { Set-Content -Path $logPath -Value $null -ErrorAction SilentlyContinue } catch {}
+        }
         while ($true) {
             Get-ChildItem -Path $NotifyDir -Filter "notify-*.json" -ErrorAction SilentlyContinue | ForEach-Object {
                 try {
@@ -115,6 +120,7 @@ function Start-NotifyWatcher {
                     $escapedTitle = $title.Replace("'", "''")
                     $escapedMsg = $msg.Replace("'", "''")
                     $escapedLogPath = $logPath.Replace("'", "''")
+                    $soundName = if ($data.sound) { [string]$data.sound } else { $null }
                     $notifyCommand = @"
 `$ErrorActionPreference = 'Stop'
 `$logPath = '$escapedLogPath'
@@ -165,19 +171,21 @@ catch {
                     }
 
                     if (-not $toastShown) {
-                        Add-Content -Path $logPath -Value ((Get-Date -Format s) + ' Falling back to MessageBox')
-                        $fallbackHost = if ($NotificationHosts -and $NotificationHosts.Count -gt 0) { $NotificationHosts[0] } else { 'powershell' }
-                        $fallbackCommand = @"
-Add-Type -AssemblyName System.Windows.Forms
-[System.Windows.Forms.MessageBox]::Show('$escapedMsg', '$escapedTitle', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Information) | Out-Null
-"@
-                        $encodedFallbackCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($fallbackCommand))
-                        Start-Process $fallbackHost -ArgumentList @(
-                            '-NoProfile',
-                            '-WindowStyle', 'Hidden',
-                            '-EncodedCommand',
-                            $encodedFallbackCommand
-                        ) | Out-Null
+                        Add-Content -Path $logPath -Value ((Get-Date -Format s) + ' No notification host succeeded, skipping visual notification')
+                    }
+
+                    # Play custom sound if available
+                    if ($soundName) {
+                        $soundPath = Join-Path $SoundsDir $soundName
+                        if (Test-Path $soundPath) {
+                            try {
+                                $player = New-Object System.Media.SoundPlayer $soundPath
+                                $player.Play()
+                            }
+                            catch {
+                                Add-Content -Path $logPath -Value ((Get-Date -Format s) + ' Sound playback failed: ' + $_)
+                            }
+                        }
                     }
                 } catch {
                     Add-Content -Path $logPath -Value ((Get-Date -Format s) + ' Watcher processing failed: ' + $_)
@@ -186,7 +194,7 @@ Add-Type -AssemblyName System.Windows.Forms
             }
             Start-Sleep -Seconds 2
         }
-    } -ArgumentList $dir, $notificationHosts
+    } -ArgumentList $dir, $notificationHosts, $soundsDir
 }
 
 function Stop-NotifyWatcher {

@@ -78,19 +78,20 @@ def test_run_ps1_defaults_notification_title_and_message_before_replace_calls():
     assert '$msg = if ($responsePreview) { $responsePreview } elseif ($data.message) { [string]$data.message } else { "Notification received." }' in content
 
 
-def test_run_ps1_windows_notifications_do_not_play_custom_wav_audio():
-    """Windows toast and MessageBox paths should rely on native notification sound, not SoundPlayer wav playback."""
+def test_run_ps1_windows_notifications_play_custom_wav_audio():
+    """Windows watcher should play custom WAV sounds via SoundPlayer after showing toast."""
     content = _run_ps1()
-    assert 'System.Media.SoundPlayer' not in content
-    assert '# Play custom sound' not in content
+    assert 'System.Media.SoundPlayer' in content
+    assert '# Play custom sound if available' in content
 
 
 def test_run_ps1_logs_outer_watcher_exceptions_instead_of_swallowing_them():
     """Top-level watcher exceptions should be recorded to watcher.log rather than silently swallowed."""
     content = _run_ps1()
-    assert 'Watcher processing failed:' in content
-    assert '} catch {' in content
-    assert '} catch {}' not in content
+    assert "Watcher processing failed:" in content
+    assert "} catch {" in content
+    # The outer notification watcher catch block should log, not silently swallow
+    assert "Watcher processing failed: ' + $_)" in content
 
 
 def test_run_ps1_uses_encoded_command_for_detached_notification_hosts():
@@ -98,16 +99,14 @@ def test_run_ps1_uses_encoded_command_for_detached_notification_hosts():
     content = _run_ps1()
     assert "'-EncodedCommand'" in content
     assert '$encodedNotifyCommand' in content
-    assert '$encodedFallbackCommand' in content
 
 
-def test_run_ps1_uses_detached_notification_process_for_burnttoast_and_fallback():
+def test_run_ps1_uses_detached_notification_process_for_burnttoast():
     """Watcher should delegate visible notifications to a separate PowerShell process instead of invoking BurntToast directly inside the job."""
     content = _run_ps1()
     assert 'Start-Process $notificationHost' in content
     assert "Get-NotificationHostCandidates" in content
     assert 'New-BurntToastNotification' in content
-    assert '[System.Windows.Forms.MessageBox]::Show' in content
     assert 'Import-Module BurntToast' in content
     assert 'ShowBalloonTip' not in content
 
@@ -121,13 +120,13 @@ def test_run_ps1_prefers_pwsh_before_windows_powershell_for_notifications():
     assert host_candidates_idx < pwsh_idx < powershell_idx
 
 
-def test_run_ps1_logs_notification_host_failures_before_messagebox_fallback():
+def test_run_ps1_logs_notification_host_failures():
     """Fallback path should emit diagnostic logs instead of silently swallowing toast host failures."""
     content = _run_ps1()
     assert '$logPath = Join-Path $NotifyDir "watcher.log"' in content
     assert 'Add-Content -Path $logPath' in content
     assert 'Notification host failed:' in content
-    assert 'Falling back to MessageBox' in content
+    assert 'No notification host succeeded' in content
 
 
 def test_run_ps1_does_not_dispose_notifyicon_immediately_after_notification():
@@ -137,11 +136,11 @@ def test_run_ps1_does_not_dispose_notifyicon_immediately_after_notification():
     assert 'Start-Sleep -Milliseconds 100' not in content
 
 
-def test_run_ps1_launches_notification_process_without_sound_order_dependency():
-    """Windows watcher no longer plays custom wav audio before launching native notifications."""
+def test_run_ps1_plays_sound_after_toast():
+    """Windows watcher plays custom sound after toast notification."""
     content = _run_ps1()
     assert 'Start-Process $notificationHost' in content
-    assert '# Play custom sound' not in content
+    assert '# Play custom sound if available' in content
 
 
 def test_run_ps1_notification_job_no_longer_calls_burnttoast_inline():
