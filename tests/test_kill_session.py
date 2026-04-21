@@ -50,10 +50,18 @@ def test_confirmed_kill_calls_worker_with_selected_session_id():
     app.push_screen = fake_push_screen
     app._kill = MagicMock()
 
+    # set_timer defers _kill to avoid ScreenError during dismiss
+    timer_callbacks = []
+    app.set_timer = MagicMock(side_effect=lambda delay, cb: timer_callbacks.append(cb))
+
     app.action_kill_session()
     assert len(callbacks) == 1
 
     callbacks[0](True)
+    # _kill is not called immediately — it's deferred via set_timer
+    app._kill.assert_not_called()
+    assert len(timer_callbacks) == 1
+    timer_callbacks[0]()
     app._kill.assert_called_once_with(3)
 
 

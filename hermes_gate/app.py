@@ -699,7 +699,7 @@ class HermesGateApp(App):
 
         def handle(confirm: bool) -> None:
             if confirm:
-                self._kill(session["id"])
+                self.set_timer(0, lambda: self._kill(session["id"]))
 
         self.push_screen(ConfirmKillScreen(name), handle)
 
